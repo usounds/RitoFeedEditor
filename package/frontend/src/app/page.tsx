@@ -25,7 +25,8 @@ import {
   Compass,
   Pencil,
   X,
-  ArrowLeft
+  ArrowLeft,
+  ImageIcon
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -50,6 +51,49 @@ import {
   DialogTrigger,
   DialogFooter
 } from "@/components/ui/dialog";
+
+const SafeImage = ({ src, alt, className, fallback }: { src: string; alt?: string; className?: string; fallback: React.ReactNode }) => {
+  const [imgSrc, setImgSrc] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!src) {
+      setImgSrc(null);
+      return;
+    }
+    if (src.startsWith("blob:") || src.startsWith("data:")) {
+      setImgSrc(src);
+      return;
+    }
+
+    let active = true;
+    let localUrl = "";
+
+    fetch(src, {
+      headers: { "X-Requested-With": "XMLHttpRequest" },
+      credentials: "include",
+    })
+      .then((res) => {
+        if (!res.ok) throw new Error();
+        return res.blob();
+      })
+      .then((blob) => {
+        if (!active) return;
+        localUrl = URL.createObjectURL(blob);
+        setImgSrc(localUrl);
+      })
+      .catch(() => {
+        if (active) setImgSrc(null);
+      });
+
+    return () => {
+      active = false;
+      if (localUrl) URL.revokeObjectURL(localUrl);
+    };
+  }, [src]);
+
+  if (!imgSrc) return <>{fallback}</>;
+  return <img src={imgSrc} alt={alt} className={className} />;
+};
 
 interface Feed {
   repo: string;
@@ -109,7 +153,8 @@ export default function Home() {
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
   const [existingAvatarCid, setExistingAvatarCid] = useState<string | null>(null);
-  const [feedType, setFeedType] = useState<"Search" | "Filter">("Search");
+  const [feedType, setFeedType] = useState<"Search" | "Filter">("Filter");
+  const [expandToAlt, setExpandToAlt] = useState(false);
   const [includeRawWords, setIncludeRawWords] = useState<string[]>([]);
   const [includeRawInput, setIncludeRawInput] = useState("");
   const [includeRawMode, setIncludeRawMode] = useState<"OR" | "AND">("OR");
@@ -122,6 +167,7 @@ export default function Home() {
   const [excludeInput, setExcludeInput] = useState("");
   const [tags, setTags] = useState<string[]>([]);
   const [tagsInput, setTagsInput] = useState("");
+  const [tagsMode, setTagsMode] = useState<"OR" | "AND">("OR");
   const [langs, setLangs] = useState("");
   const [replyFilter, setReplyFilter] = useState<"all" | "only" | "exclude">("all");
   const [imagesFilter, setImagesFilter] = useState<"all" | "only" | "exclude">("all");
@@ -129,10 +175,10 @@ export default function Home() {
   const [externalFilter, setExternalFilter] = useState<"all" | "only" | "exclude">("all");
   const [labelsFilter, setLabelsFilter] = useState<"all" | "only" | "exclude">("all");
   const [sourceType, setSourceType] = useState<"all" | "me" | "user">("all");
-  const [sourceUserDid, setSourceUserDid] = useState("");
-  const [sourceUserHandle, setSourceUserHandle] = useState("");
+  const [sourceUserDids, setSourceUserDids] = useState<string[]>([]);
+  const [sourceUserHandles, setSourceUserHandles] = useState<string[]>([]);
+  const [sourceUserHandlesInput, setSourceUserHandlesInput] = useState("");
   const [actorSuggestions, setActorSuggestions] = useState<any[]>([]);
-  const [selectedActor, setSelectedActor] = useState<any | null>(null);
   const [isLoadingActorSuggestions, setIsLoadingActorSuggestions] = useState(false);
   const [step, setStep] = useState<1 | 2>(1);
   
@@ -149,9 +195,6 @@ export default function Home() {
       const res = await fetch(`https://public.api.bsky.app/xrpc/app.bsky.actor.getProfile?actor=${encodeURIComponent(cleanHandle)}`);
       const data = await res.json();
       if (data && !data.error && data.did) {
-        setSelectedActor(data);
-        setSourceUserDid(data.did);
-        setSourceUserHandle(data.handle);
         return data.did;
       }
       return null;
@@ -161,37 +204,36 @@ export default function Home() {
     }
   };
 
-  // Fetch actor profile for display when DID changes (e.g. on edit)
-  useEffect(() => {
-    if (sourceUserDid.startsWith("did:")) {
-      if (selectedActor && selectedActor.did === sourceUserDid) return;
-      fetch(`https://public.api.bsky.app/xrpc/app.bsky.actor.getProfile?actor=${encodeURIComponent(sourceUserDid)}`)
-        .then(res => res.json())
-        .then(data => {
-          if (data && !data.error) {
-            setSelectedActor(data);
-            setSourceUserHandle(data.handle);
-          }
-        })
-        .catch(err => {
-          console.error("Failed to fetch actor profile for DID:", err);
-        });
-    } else {
-      setSelectedActor(null);
-      setSourceUserHandle("");
+  // Resolve multiple DIDs back to handles (used when parsing condition on edit)
+  const resolveDidsToHandles = async (dids: string[]) => {
+    const resolvedHandles: string[] = [];
+    for (const did of dids) {
+      try {
+        const res = await fetch(`https://public.api.bsky.app/xrpc/app.bsky.actor.getProfile?actor=${encodeURIComponent(did)}`);
+        const data = await res.json();
+        if (data && !data.error && data.handle) {
+          resolvedHandles.push(data.handle);
+        } else {
+          resolvedHandles.push(did);
+        }
+      } catch (e) {
+        console.error("Failed to resolve DID to handle:", e);
+        resolvedHandles.push(did);
+      }
     }
-  }, [sourceUserDid]);
+    setSourceUserHandles(resolvedHandles);
+  };
 
-  // Search actors based on typing handle
+  // Search actors based on typing handle in TagsInput
   useEffect(() => {
-    if (!sourceUserHandle.trim() || (selectedActor && selectedActor.handle === sourceUserHandle)) {
+    if (!sourceUserHandlesInput.trim()) {
       setActorSuggestions([]);
       return;
     }
 
     const delayDebounceFn = setTimeout(() => {
       setIsLoadingActorSuggestions(true);
-      fetch(`https://public.api.bsky.app/xrpc/app.bsky.actor.searchActorsTypeahead?q=${encodeURIComponent(sourceUserHandle)}&limit=5`)
+      fetch(`https://public.api.bsky.app/xrpc/app.bsky.actor.searchActorsTypeahead?q=${encodeURIComponent(sourceUserHandlesInput)}&limit=5`)
         .then(res => res.json())
         .then(data => {
           if (data && Array.isArray(data.actors)) {
@@ -210,7 +252,54 @@ export default function Home() {
     }, 450);
 
     return () => clearTimeout(delayDebounceFn);
-  }, [sourceUserHandle, selectedActor]);
+  }, [sourceUserHandlesInput]);
+
+  const handleSourceHandlesChange = async (newHandles: string[]) => {
+    if (newHandles.length < sourceUserHandles.length) {
+      const removedIndex = sourceUserHandles.findIndex(h => !newHandles.includes(h));
+      if (removedIndex !== -1) {
+        setSourceUserDids(prev => prev.filter((_, idx) => idx !== removedIndex));
+        setSourceUserHandles(prev => prev.filter((_, idx) => idx !== removedIndex));
+      }
+      return;
+    }
+
+    const addedHandles = newHandles.filter(h => !sourceUserHandles.includes(h));
+    if (addedHandles.length > 0) {
+      const loadingResolve = toast.loading("ハンドル名からDIDを解決中...");
+      try {
+        const resolvedDids: string[] = [];
+        const resolvedHandles: string[] = [];
+        for (const rawHandle of addedHandles) {
+          const handle = rawHandle.replace(/^@/, "").trim();
+          if (!handle) continue;
+          const did = await resolveHandleToDid(handle);
+          if (did) {
+            resolvedDids.push(did);
+            resolvedHandles.push(handle);
+          } else {
+            toast.error(`@${handle} の解決に失敗しました。存在するハンドル名かご確認ください。`);
+          }
+        }
+        if (resolvedDids.length > 0) {
+          setSourceUserDids(prev => [...new Set([...prev, ...resolvedDids])]);
+          setSourceUserHandles(prev => [...new Set([...prev, ...resolvedHandles])]);
+        }
+      } catch (e) {
+        console.error(e);
+        toast.error("ハンドル名の解決中にエラーが発生しました。");
+      } finally {
+        toast.dismiss(loadingResolve);
+      }
+    }
+  };
+
+  const handleSelectActor = (actor: any) => {
+    setSourceUserDids(prev => [...new Set([...prev, actor.did])]);
+    setSourceUserHandles(prev => [...new Set([...prev, actor.handle])]);
+    setSourceUserHandlesInput("");
+    setActorSuggestions([]);
+  };
 
   // Set mount state and load configuration from local storage
   useEffect(() => {
@@ -241,9 +330,22 @@ export default function Home() {
 
   // Generate Preview Query whenever form inputs change
   const generatedCondition = React.useMemo(() => {
-    const parts: string[] = [];
+    const keywordParts: string[] = [];
 
-    // 1-1. Include Raw words (text.raw contains)
+    // 1. Source (from) - Temporarily disabled due to backend server parser bug with colons
+    /*
+    if (sourceType === "me") {
+      if (user?.did) {
+        keywordParts.push(`from([${user.did}])`);
+      } else {
+        keywordParts.push("from($me)");
+      }
+    } else if (sourceType === "user" && sourceUserDids.length > 0) {
+      keywordParts.push(`from([${sourceUserDids.join(", ")}])`);
+    }
+    */
+
+    // 2-1. Include Raw words (chars)
     const finalRawIncludes = [...includeRawWords];
     if (includeRawInput.trim()) {
       const pending = includeRawInput.split(/[,\s\u3001]+/).map(w => w.trim()).filter(Boolean);
@@ -252,16 +354,26 @@ export default function Home() {
       });
     }
     if (finalRawIncludes.length > 0) {
-      const clauses = finalRawIncludes.map(w => `text.raw contains ${JSON.stringify(w)}`);
-      if (clauses.length === 1) {
-        parts.push(clauses[0]);
+      if (includeRawMode === "OR") {
+        const terms = finalRawIncludes.join(", ");
+        if (expandToAlt) {
+          keywordParts.push(`(chars(${terms}) || image(${terms}) || video(${terms}))`);
+        } else {
+          keywordParts.push(`chars(${terms})`);
+        }
       } else {
-        const joinOp = includeRawMode === "OR" ? " or " : " and ";
-        parts.push(`(${clauses.join(joinOp)})`);
+        finalRawIncludes.forEach(w => {
+          const term = w;
+          if (expandToAlt) {
+            keywordParts.push(`(chars(${term}) || image(${term}) || video(${term}))`);
+          } else {
+            keywordParts.push(`chars(${term})`);
+          }
+        });
       }
     }
 
-    // 1-2. Include Word-match words (text containsAny/containsAll)
+    // 2-2. Include Word-match words (word)
     const finalIncludes = [...includeWords];
     if (includeInput.trim()) {
       const pending = includeInput.split(/[,\s\u3001]+/).map(w => w.trim()).filter(Boolean);
@@ -270,15 +382,26 @@ export default function Home() {
       });
     }
     if (finalIncludes.length > 0) {
-      const listStr = JSON.stringify(finalIncludes);
       if (includeMode === "OR") {
-        parts.push(`text containsAny ${listStr}`);
+        const terms = finalIncludes.join(", ");
+        if (expandToAlt) {
+          keywordParts.push(`(word(${terms}) || image(${terms}) || video(${terms}))`);
+        } else {
+          keywordParts.push(`word(${terms})`);
+        }
       } else {
-        parts.push(`text containsAll ${listStr}`);
+        finalIncludes.forEach(w => {
+          const term = w;
+          if (expandToAlt) {
+            keywordParts.push(`(word(${term}) || image(${term}) || video(${term}))`);
+          } else {
+            keywordParts.push(`word(${term})`);
+          }
+        });
       }
     }
 
-    // 2-1. Exclude Raw words (not text.raw contains)
+    // 3-1. Exclude Raw words (!chars)
     const finalRawExcludes = [...excludeRawWords];
     if (excludeRawInput.trim()) {
       const pending = excludeRawInput.split(/[,\s\u3001]+/).map(w => w.trim()).filter(Boolean);
@@ -287,11 +410,17 @@ export default function Home() {
       });
     }
     if (finalRawExcludes.length > 0) {
-      const clauses = finalRawExcludes.map(w => `not (text.raw contains ${JSON.stringify(w)})`);
-      parts.push(clauses.join(" and "));
+      finalRawExcludes.forEach(w => {
+        const term = w;
+        if (expandToAlt) {
+          keywordParts.push(`!(chars(${term}) || image(${term}) || video(${term}))`);
+        } else {
+          keywordParts.push(`!chars(${term})`);
+        }
+      });
     }
 
-    // 2-2. Exclude Word-match words (not text containsAny)
+    // 3-2. Exclude Word-match words (!word)
     const finalExcludes = [...excludeWords];
     if (excludeInput.trim()) {
       const pending = excludeInput.split(/[,\s\u3001]+/).map(w => w.trim()).filter(Boolean);
@@ -300,11 +429,16 @@ export default function Home() {
       });
     }
     if (finalExcludes.length > 0) {
-      const listStr = JSON.stringify(finalExcludes);
-      parts.push(`not (text containsAny ${listStr})`);
+      const terms = finalExcludes.join(", ");
+      if (expandToAlt) {
+        keywordParts.push(`!(word(${terms}) || image(${terms}) || video(${terms}))`);
+      } else {
+        keywordParts.push(`!word(${terms})`);
+      }
     }
 
-    // 3. Tags (Convert to text.raw contains "#tag")
+    // 4. Tags
+    let tagCondition = "";
     const finalTags = [...tags];
     if (tagsInput.trim()) {
       const pending = tagsInput.split(/[,\s\u3001]+/).map(t => t.trim()).filter(Boolean);
@@ -313,74 +447,66 @@ export default function Home() {
       });
     }
     if (finalTags.length > 0) {
-      const clauses = finalTags.map(t => {
-        const cleanTag = t.startsWith("#") ? t : `#${t}`;
-        return `text.raw contains ${JSON.stringify(cleanTag)}`;
-      });
-      if (clauses.length === 1) {
-        parts.push(clauses[0]);
-      } else {
-        parts.push(`(${clauses.join(" or ")})`);
-      }
+      tagCondition = `tag(${finalTags.map(t => {
+        const cleanTag = t.startsWith("#") ? t.slice(1) : t;
+        return cleanTag;
+      }).join(", ")})`;
     }
 
-    // 4. Languages
-    if (langs.trim()) {
-      const parsedLangs = langs
-        .split(/[,\s\u3001]+/)
-        .map(l => l.trim())
-        .filter(Boolean);
-      if (parsedLangs.length > 0) {
-        const listStr = JSON.stringify(parsedLangs);
-        parts.push(`langs containsAny ${listStr}`);
+    // Combine keyword conditions and tags
+    const combinedParts: string[] = [];
+    const hasKeywords = keywordParts.length > 0;
+    const hasTags = tagCondition !== "";
+
+    if (hasKeywords && hasTags) {
+      const joinedKeywords = keywordParts.length > 1 ? `(${keywordParts.join(" && ")})` : keywordParts[0];
+      if (tagsMode === "OR") {
+        combinedParts.push(`(${joinedKeywords} || ${tagCondition})`);
+      } else {
+        combinedParts.push(`(${joinedKeywords} && ${tagCondition})`);
       }
+    } else if (hasKeywords) {
+      combinedParts.push(...keywordParts);
+    } else if (hasTags) {
+      combinedParts.push(tagCondition);
     }
 
     // 5. Reply
     if (replyFilter === "only") {
-      parts.push("reply exists");
+      combinedParts.push("isreply()");
     } else if (replyFilter === "exclude") {
-      parts.push("not (reply exists)");
+      combinedParts.push("!isreply()");
     }
 
     // 6. Embed.images
     if (imagesFilter === "only") {
-      parts.push("embed.images exists");
+      combinedParts.push("hasimage()");
     } else if (imagesFilter === "exclude") {
-      parts.push("not (embed.images exists)");
+      combinedParts.push("!hasimage()");
     }
 
     // 7. Embed.video
     if (videoFilter === "only") {
-      parts.push("embed.video exists");
+      combinedParts.push("hasvideo()");
     } else if (videoFilter === "exclude") {
-      parts.push("not (embed.video exists)");
+      combinedParts.push("!hasvideo()");
     }
 
     // 8. Embed.external
     if (externalFilter === "only") {
-      parts.push("embed.external exists");
+      combinedParts.push("hasexternal()");
     } else if (externalFilter === "exclude") {
-      parts.push("not (embed.external exists)");
+      combinedParts.push("!hasexternal()");
     }
 
     // 9. Labels
     if (labelsFilter === "only") {
-      parts.push("labels exists");
+      combinedParts.push("haslabel()");
     } else if (labelsFilter === "exclude") {
-      parts.push("not (labels exists)");
+      combinedParts.push("!haslabel()");
     }
 
-    const filterSection = parts.length > 0 ? ` filter { ${parts.join(" and ")} }` : "";
-
-    let sourceStr = "all(newest)";
-    if (sourceType === "me") {
-      sourceStr = "postedBy($me, newest)";
-    } else if (sourceType === "user" && sourceUserDid.trim()) {
-      sourceStr = `postedBy(${JSON.stringify(sourceUserDid.trim())}, newest)`;
-    }
-
-    return `source { ${sourceStr} }${filterSection}`;
+    return combinedParts.join(" && ");
   }, [
     includeRawWords,
     includeRawInput,
@@ -394,14 +520,16 @@ export default function Home() {
     excludeInput,
     tags,
     tagsInput,
-    langs,
+    tagsMode,
     replyFilter,
     imagesFilter,
     videoFilter,
     externalFilter,
     labelsFilter,
     sourceType,
-    sourceUserDid
+    sourceUserDids,
+    expandToAlt,
+    user
   ]);
 
   // Set initial raw condition value when toggled or updated
@@ -550,7 +678,7 @@ export default function Home() {
     setIsEditing(true);
     setEditingRkey(feed.rkey);
     setRkey(feed.rkey);
-    setFeedType(feed.search ? "Search" : "Filter");
+    setFeedType("Filter");
 
     // Form fields
     setDisplayName(feed.displayName || "");
@@ -580,7 +708,7 @@ export default function Home() {
     setIsEditing(false);
     setEditingRkey("");
     setRkey("");
-    setFeedType("Search");
+    setFeedType("Filter");
     
     // Reset inputs
     setDisplayName("");
@@ -600,6 +728,7 @@ export default function Home() {
     setExcludeInput("");
     setTags([]);
     setTagsInput("");
+    setTagsMode("OR");
     setLangs("");
     setReplyFilter("all");
     setImagesFilter("all");
@@ -607,17 +736,18 @@ export default function Home() {
     setExternalFilter("all");
     setLabelsFilter("all");
     setSourceType("all");
-    setSourceUserDid("");
-    setSourceUserHandle("");
-    setSelectedActor(null);
+    setSourceUserDids([]);
+    setSourceUserHandles([]);
+    setSourceUserHandlesInput("");
     setActorSuggestions([]);
+    setExpandToAlt(false);
     setStep(1);
     setIsAdvanced(false);
     setRawCondition("");
     setCurrentView("list");
   };
 
-  // Parse condition query back to Form States
+  // Parse condition query back to Form States (Filter Type)
   const parseQueryToForm = (query: string) => {
     try {
       // Reset builder form states
@@ -633,268 +763,301 @@ export default function Home() {
       setExcludeInput("");
       setTags([]);
       setTagsInput("");
-      setLangs("");
+      setTagsMode("OR");
+      setLangs(""); // Not supported, reset
       setReplyFilter("all");
       setImagesFilter("all");
       setVideoFilter("all");
       setExternalFilter("all");
       setLabelsFilter("all");
       setSourceType("all");
-      setSourceUserDid("");
-      setSourceUserHandle("");
-      setSelectedActor(null);
+      setSourceUserDids([]);
+      setSourceUserHandles([]);
+      setSourceUserHandlesInput("");
       setActorSuggestions([]);
+      setExpandToAlt(false);
       setStep(1);
       setIsAdvanced(false);
       setRawCondition(query);
 
-      // Normalize line endings and whitespace
-      const normalizedQuery = query.replace(/\r\n/g, "\n").trim();
-      
-      // Parse source block
-      const sourceMatch = normalizedQuery.match(/source\s*\{\s*([\s\S]*?)\s*\}/);
-      let parsedSourceType: "all" | "me" | "user" = "all";
-      let parsedSourceDid = "";
-      if (sourceMatch) {
-        const sourceBody = sourceMatch[1].trim();
-        if (sourceBody.startsWith("postedBy")) {
-          if (sourceBody.includes("$me")) {
-            parsedSourceType = "me";
+      let normalizedQuery = query.trim();
+      if (!normalizedQuery) return;
+
+      // Tag Pre-parsing & Stripping
+      const tagRegex = /tag\(([^)]*)\)/;
+      const tagMatch = normalizedQuery.match(tagRegex);
+      if (tagMatch) {
+        const argsStr = tagMatch[1].trim();
+        const parsedTags = argsStr.split(/\s*,\s*/).map(w => {
+          const m = w.match(/^["'](.*?)["']$/);
+          return m ? m[1] : w;
+        }).filter(Boolean);
+        if (parsedTags.length > 0) {
+          setTags(parsedTags);
+        }
+
+        const hasOrJoin = normalizedQuery.includes("|| tag(");
+        const hasAndJoin = normalizedQuery.includes("&& tag(");
+
+        if (hasOrJoin) {
+          setTagsMode("OR");
+          const groupRegexOr = /\(\s*(.*?)\s*\|\|\s*tag\([^)]*\)\s*\)/;
+          const groupMatch = normalizedQuery.match(groupRegexOr);
+          if (groupMatch) {
+            normalizedQuery = normalizedQuery.replace(groupMatch[0], groupMatch[1]);
           } else {
-            const didMatch = sourceBody.match(/postedBy\(\s*["'](.*?)["']/);
-            if (didMatch) {
-              parsedSourceType = "user";
-              parsedSourceDid = didMatch[1];
-            }
+            normalizedQuery = normalizedQuery.replace(/\|\|\s*tag\([^)]*\)/, "");
           }
+        } else if (hasAndJoin) {
+          setTagsMode("AND");
+          const groupRegexAnd = /\(\s*(.*?)\s*&&\s*tag\([^)]*\)\s*\)/;
+          const groupMatch = normalizedQuery.match(groupRegexAnd);
+          if (groupMatch) {
+            normalizedQuery = normalizedQuery.replace(groupMatch[0], groupMatch[1]);
+          } else {
+            normalizedQuery = normalizedQuery.replace(/&&\s*tag\([^)]*\)/, "");
+          }
+        } else {
+          // Flat tag(...) clause or no combined group.
+          const hasKeywordsInQuery = /chars\(|word\(/.test(normalizedQuery);
+          if (hasKeywordsInQuery) {
+            setTagsMode("AND");
+          } else {
+            setTagsMode("OR");
+          }
+          normalizedQuery = normalizedQuery.replace(/&&\s*tag\([^)]*\)/, "");
+          normalizedQuery = normalizedQuery.replace(/tag\([^)]*\)\s*&&/, "");
+          normalizedQuery = normalizedQuery.replace(/tag\([^)]*\)/, "");
         }
       }
-      setSourceType(parsedSourceType);
-      setSourceUserDid(parsedSourceDid);
 
-      let simpleQueryText = "source {\n  all(newest)\n}";
-      if (parsedSourceType === "me") {
-        simpleQueryText = "source {\n  postedBy($me, newest)\n}";
-      } else if (parsedSourceType === "user" && parsedSourceDid) {
-        simpleQueryText = `source {\n  postedBy("${parsedSourceDid}", newest)\n}`;
-      }
-      
-      if (!normalizedQuery || normalizedQuery === simpleQueryText) {
-        return;
-      }
-
-      // Check if it matches the filter structure
-      const filterMatch = normalizedQuery.match(/filter\s*\{\s*([\s\S]*?)\s*\}/);
-      if (!filterMatch) {
-        // If there is no 'filter' section at all, it's a simple query (no filters)
-        if (!normalizedQuery.includes("filter")) {
-          return;
-        }
-        setIsAdvanced(true);
-        return;
-      }
-
-      const filterBody = filterMatch[1].trim();
-      if (!filterBody) {
-        return;
-      }
-
-      // Split clauses by 'and'
-      const clauses = filterBody.split(/\s+and\s+/);
+      // Split by '&&'
+      const clauses = normalizedQuery.split(/\s*&&\s*/);
       let isParsable = true;
 
       for (const clause of clauses) {
         const trimmedClause = clause.trim();
+        if (!trimmedClause) continue;
 
-        // 1. Single or multiple OR tags
-        let tagMatch = false;
-        
-        // 1a. Old format: facet.features.tags containsAny ["tag1", "tag2"]
-        const oldTagsMatch = trimmedClause.match(/^facet\.features\.tags\s+containsAny\s+(\[[\s\S]*?\])$/);
-        if (oldTagsMatch) {
-          try {
-            const jsonStr = oldTagsMatch[1].replace(/'/g, '"');
-            const parsedTags = JSON.parse(jsonStr);
-            const cleanTags = parsedTags.map((t: string) => t.startsWith("#") ? t.slice(1) : t);
-            setTags(cleanTags);
-            tagMatch = true;
-          } catch (e) {
-            console.warn("Failed to parse old tags JSON:", e);
+        // Check for ALT expansion clauses first
+        const expandCharsMatch = trimmedClause.match(/^\(?\s*chars\(([^)]*)\)\s*\|\|\s*image\(([^)]*)\)\s*\|\|\s*video\(([^)]*)\)\s*\)?$/);
+        if (expandCharsMatch) {
+          setExpandToAlt(true);
+          const argsStr = expandCharsMatch[1].trim();
+          const words = argsStr.split(/\s*,\s*/).map(w => {
+            const m = w.match(/^["'](.*?)["']$/);
+            return m ? m[1] : w;
+          }).filter(Boolean);
+          if (words.length > 0) {
+            setIncludeRawWords(prev => [...new Set([...prev, ...words])]);
+            if (words.length > 1) {
+              setIncludeRawMode("OR");
+            }
           }
+          continue;
         }
 
-        // 1b. Old format: facet.features.tags contains "tag"
-        if (!tagMatch) {
-          const oldTagMatch = trimmedClause.match(/^facet\.features\.tags\s+contains\s+["'](.*?)["']$/);
-          if (oldTagMatch) {
-            const t = oldTagMatch[1];
-            const cleanTag = t.startsWith("#") ? t.slice(1) : t;
-            setTags([cleanTag]);
-            tagMatch = true;
+        const expandWordMatch = trimmedClause.match(/^\(?\s*word\(([^)]*)\)\s*\|\|\s*image\(([^)]*)\)\s*\|\|\s*video\(([^)]*)\)\s*\)?$/);
+        if (expandWordMatch) {
+          setExpandToAlt(true);
+          const argsStr = expandWordMatch[1].trim();
+          const words = argsStr.split(/\s*,\s*/).map(w => {
+            const m = w.match(/^["'](.*?)["']$/);
+            return m ? m[1] : w;
+          }).filter(Boolean);
+          if (words.length > 0) {
+            setIncludeWords(prev => [...new Set([...prev, ...words])]);
+            if (words.length > 1) {
+              setIncludeMode("OR");
+            }
           }
+          continue;
         }
 
-        // 1c. New format: text.raw contains "#tag" (grouped by OR)
-        if (!tagMatch && trimmedClause.startsWith("(") && trimmedClause.endsWith(")")) {
-          const inner = trimmedClause.slice(1, -1).trim();
-          const subClauses = inner.split(/\s+or\s+/);
-          const potentialTags: string[] = [];
-          let allTags = true;
-          for (const sc of subClauses) {
-            const match = sc.trim().match(/^text\.raw\s+contains\s+["'](#.*?)["']$/);
-            if (match) {
-              potentialTags.push(match[1].slice(1));
+        const expandNotCharsMatch = trimmedClause.match(/^!(?:\(\s*)?chars\(([^)]*)\)\s*\|\|\s*image\(([^)]*)\)\s*\|\|\s*video\(([^)]*)\)(?:\s*\))?$/);
+        if (expandNotCharsMatch) {
+          setExpandToAlt(true);
+          const argsStr = expandNotCharsMatch[1].trim();
+          const words = argsStr.split(/\s*,\s*/).map(w => {
+            const m = w.match(/^["'](.*?)["']$/);
+            return m ? m[1] : w;
+          }).filter(Boolean);
+          if (words.length > 0) {
+            setExcludeRawWords(prev => [...new Set([...prev, ...words])]);
+          }
+          continue;
+        }
+
+        const expandNotWordMatch = trimmedClause.match(/^!(?:\(\s*)?word\(([^)]*)\)\s*\|\|\s*image\(([^)]*)\)\s*\|\|\s*video\(([^)]*)\)(?:\s*\))?$/);
+        if (expandNotWordMatch) {
+          setExpandToAlt(true);
+          const argsStr = expandNotWordMatch[1].trim();
+          const words = argsStr.split(/\s*,\s*/).map(w => {
+            const m = w.match(/^["'](.*?)["']$/);
+            return m ? m[1] : w;
+          }).filter(Boolean);
+          if (words.length > 0) {
+            setExcludeWords(prev => [...new Set([...prev, ...words])]);
+          }
+          continue;
+        }
+
+        // If clause contains '||' but did not match any of the ALT expansion patterns above,
+        // it cannot be parsed by the simple form builder.
+        if (trimmedClause.includes("||")) {
+          isParsable = false;
+          break;
+        }
+
+        // 1. Source: from($me) or from([did:plc:...])
+        const fromMatch = trimmedClause.match(/^from\(\s*([^)]*)\s*\)$/);
+        if (fromMatch) {
+          let argsStr = fromMatch[1].trim();
+          if (argsStr === "$me") {
+            setSourceType("me");
+          } else {
+            // Remove brackets [] if present
+            if (argsStr.startsWith("[") && argsStr.endsWith("]")) {
+              argsStr = argsStr.slice(1, -1).trim();
+            }
+            const dids = argsStr.split(/\s*,\s*/).map(d => {
+              const m = d.match(/^["'](.*?)["']$/);
+              return m ? m[1] : d.trim();
+            }).filter(Boolean);
+            
+            if (dids.length === 1 && user?.did && dids[0] === user.did) {
+              setSourceType("me");
             } else {
-              allTags = false;
-              break;
+              setSourceType("user");
+              setSourceUserDids(dids);
+              resolveDidsToHandles(dids);
             }
           }
-          if (allTags && potentialTags.length > 0) {
-            setTags(potentialTags);
-            tagMatch = true;
-          }
+          continue;
         }
 
-        // 1d. New format: text.raw contains "#tag" (single)
-        if (!tagMatch) {
-          const match = trimmedClause.match(/^text\.raw\s+contains\s+["'](#.*?)["']$/);
-          if (match) {
-            setTags([match[1].slice(1)]);
-            tagMatch = true;
-          }
-        }
-        if (tagMatch) continue;
-
-        // 2. Include Raw words (text.raw contains "...")
-        let includeRawMatch = false;
-        if (trimmedClause.startsWith("(") && trimmedClause.endsWith(")")) {
-          const inner = trimmedClause.slice(1, -1).trim();
-          const isOr = inner.includes(" or ");
-          const isAnd = inner.includes(" and ");
-          if (isOr !== isAnd) {
-            const splitOp = isOr ? /\s+or\s+/ : /\s+and\s+/;
-            const subClauses = inner.split(splitOp);
-            const words: string[] = [];
-            let allMatch = true;
-            for (const sc of subClauses) {
-              const match = sc.trim().match(/^text\.raw\s+contains\s+["'](.*?)["']$/);
-              if (match && !match[1].startsWith("#")) {
-                words.push(match[1]);
-              } else {
-                allMatch = false;
-                break;
-              }
-            }
-            if (allMatch && words.length > 0) {
-              setIncludeRawWords(words);
-              setIncludeRawMode(isOr ? "OR" : "AND");
-              includeRawMatch = true;
+        // 2-1. Include Raw words: chars(...)
+        const charsMatch = trimmedClause.match(/^chars\(([^)]*)\)$/);
+        if (charsMatch) {
+          const argsStr = charsMatch[1].trim();
+          const words = argsStr.split(/\s*,\s*/).map(w => {
+            const m = w.match(/^["'](.*?)["']$/);
+            return m ? m[1] : w;
+          }).filter(Boolean);
+          if (words.length > 0) {
+            setIncludeRawWords(prev => [...new Set([...prev, ...words])]);
+            if (words.length > 1) {
+              setIncludeRawMode("OR");
             }
           }
-        } else {
-          const match = trimmedClause.match(/^text\.raw\s+contains\s+["'](.*?)["']$/);
-          if (match && !match[1].startsWith("#")) {
-            setIncludeRawWords([match[1]]);
-            setIncludeRawMode("OR");
-            includeRawMatch = true;
+          continue;
+        }
+
+        // 2-2. Include Word-match words: word(...)
+        const wordMatch = trimmedClause.match(/^word\(([^)]*)\)$/);
+        if (wordMatch) {
+          const argsStr = wordMatch[1].trim();
+          const words = argsStr.split(/\s*,\s*/).map(w => {
+            const m = w.match(/^["'](.*?)["']$/);
+            return m ? m[1] : w;
+          }).filter(Boolean);
+          if (words.length > 0) {
+            setIncludeWords(prev => [...new Set([...prev, ...words])]);
+            if (words.length > 1) {
+              setIncludeMode("OR");
+            }
           }
-        }
-        if (includeRawMatch) continue;
-
-        // 3. Exclude Raw words (not text.raw contains "...")
-        const excludeRawMatch = trimmedClause.match(/^not\s*\(text\.raw\s+contains\s+["'](.*?)["']\)$/);
-        if (excludeRawMatch) {
-          setExcludeRawWords(prev => {
-            if (prev.includes(excludeRawMatch[1])) return prev;
-            return [...prev, excludeRawMatch[1]];
-          });
           continue;
         }
 
-        // 4. Include words (containsAny)
-        const includeAnyMatch = trimmedClause.match(/^text\s+containsAny\s+(\[[\s\S]*?\])$/);
-        if (includeAnyMatch) {
-          const jsonStr = includeAnyMatch[1].replace(/'/g, '"');
-          const words = JSON.parse(jsonStr);
-          setIncludeWords(words);
-          setIncludeMode("OR");
+        // 3-1. Exclude Raw words: !chars(...)
+        const notCharsMatch = trimmedClause.match(/^!chars\(([^)]*)\)$/);
+        if (notCharsMatch) {
+          const argsStr = notCharsMatch[1].trim();
+          const words = argsStr.split(/\s*,\s*/).map(w => {
+            const m = w.match(/^["'](.*?)["']$/);
+            return m ? m[1] : w;
+          }).filter(Boolean);
+          if (words.length > 0) {
+            setExcludeRawWords(prev => [...new Set([...prev, ...words])]);
+          }
           continue;
         }
 
-        // 5. Include words (containsAll)
-        const includeAllMatch = trimmedClause.match(/^text\s+containsAll\s+(\[[\s\S]*?\])$/);
-        if (includeAllMatch) {
-          const jsonStr = includeAllMatch[1].replace(/'/g, '"');
-          const words = JSON.parse(jsonStr);
-          setIncludeWords(words);
-          setIncludeMode("AND");
+        // 3-2. Exclude Word-match words: !word(...)
+        const notWordMatch = trimmedClause.match(/^!word\(([^)]*)\)$/);
+        if (notWordMatch) {
+          const argsStr = notWordMatch[1].trim();
+          const words = argsStr.split(/\s*,\s*/).map(w => {
+            const m = w.match(/^["'](.*?)["']$/);
+            return m ? m[1] : w;
+          }).filter(Boolean);
+          if (words.length > 0) {
+            setExcludeWords(prev => [...new Set([...prev, ...words])]);
+          }
           continue;
         }
 
-        // 6. Exclude words (not containsAny)
-        const excludeMatch = trimmedClause.match(/^not\s*\(text\s+containsAny\s+(\[[\s\S]*?\])\)$/);
-        if (excludeMatch) {
-          const jsonStr = excludeMatch[1].replace(/'/g, '"');
-          const words = JSON.parse(jsonStr);
-          setExcludeWords(words);
+        // 4. Tags: tag(...) - now stripped and handled in pre-parsing stage, but left here for redundant safety.
+        const tagMatch = trimmedClause.match(/^tag\(([^)]*)\)$/);
+        if (tagMatch) {
+          const argsStr = tagMatch[1].trim();
+          const parsedTags = argsStr.split(/\s*,\s*/).map(w => {
+            const m = w.match(/^["'](.*?)["']$/);
+            return m ? m[1] : w;
+          }).filter(Boolean);
+          if (parsedTags.length > 0) {
+            setTags(prev => [...new Set([...prev, ...parsedTags])]);
+          }
           continue;
         }
 
-        // 7. Languages
-        const langMatch = trimmedClause.match(/^langs\s+containsAny\s+(\[[\s\S]*?\])$/);
-        if (langMatch) {
-          const jsonStr = langMatch[1].replace(/'/g, '"');
-          const parsedLangs = JSON.parse(jsonStr);
-          setLangs(parsedLangs.join(", "));
-          continue;
-        }
-
-        // 8. Reply
-        if (trimmedClause === "reply exists") {
+        // 5. Reply
+        if (trimmedClause === "isreply()") {
           setReplyFilter("only");
           continue;
         }
-        if (trimmedClause === "not (reply exists)") {
+        if (trimmedClause === "!isreply()") {
           setReplyFilter("exclude");
           continue;
         }
 
-        // 9. Images
-        if (trimmedClause === "embed.images exists") {
+        // 6. Images
+        if (trimmedClause === "hasimage()") {
           setImagesFilter("only");
           continue;
         }
-        if (trimmedClause === "not (embed.images exists)") {
+        if (trimmedClause === "!hasimage()") {
           setImagesFilter("exclude");
           continue;
         }
 
-        // 10. Video
-        if (trimmedClause === "embed.video exists") {
+        // 7. Video
+        if (trimmedClause === "hasvideo()") {
           setVideoFilter("only");
           continue;
         }
-        if (trimmedClause === "not (embed.video exists)") {
+        if (trimmedClause === "!hasvideo()") {
           setVideoFilter("exclude");
           continue;
         }
 
-        // 11. External
-        if (trimmedClause === "embed.external exists") {
+        // 8. External
+        if (trimmedClause === "hasexternal()") {
           setExternalFilter("only");
           continue;
         }
-        if (trimmedClause === "not (embed.external exists)") {
+        if (trimmedClause === "!hasexternal()") {
           setExternalFilter("exclude");
           continue;
         }
 
-        // 12. Labels
-        if (trimmedClause === "labels exists") {
+        // 9. Labels
+        if (trimmedClause === "haslabel()") {
           setLabelsFilter("only");
           continue;
         }
-        if (trimmedClause === "not (labels exists)") {
+        if (trimmedClause === "!haslabel()") {
           setLabelsFilter("exclude");
           continue;
         }
@@ -974,20 +1137,32 @@ export default function Home() {
       }
 
       if (sourceType === "user") {
-        let currentDid = sourceUserDid;
-        if (!currentDid.trim() && sourceUserHandle.trim()) {
+        let currentDids = [...sourceUserDids];
+        if (sourceUserHandlesInput.trim()) {
           const loadingResolve = toast.loading("ハンドル名からDIDを解決中...");
-          const resolved = await resolveHandleToDid(sourceUserHandle);
-          toast.dismiss(loadingResolve);
-          if (resolved) {
-            currentDid = resolved;
-          } else {
-            toast.error("指定されたハンドル名が見つかりませんでした。");
+          const handle = sourceUserHandlesInput.replace(/^@/, "").trim();
+          try {
+            const res = await fetch(`https://public.api.bsky.app/xrpc/app.bsky.actor.getProfile?actor=${encodeURIComponent(handle)}`);
+            const data = await res.json();
+            toast.dismiss(loadingResolve);
+            if (data && !data.error && data.did) {
+              currentDids.push(data.did);
+              setSourceUserDids(prev => [...new Set([...prev, data.did])]);
+              setSourceUserHandles(prev => [...new Set([...prev, data.handle])]);
+              setSourceUserHandlesInput("");
+            } else {
+              toast.error(`@${handle} の解決に失敗しました。存在するハンドル名かご確認ください。`);
+              return;
+            }
+          } catch (e) {
+            toast.dismiss(loadingResolve);
+            console.error(e);
+            toast.error("ハンドル名の解決中にエラーが発生しました。");
             return;
           }
         }
-        if (!currentDid.trim()) {
-          toast.error("特定のユーザーのハンドル名を入力してください。");
+        if (currentDids.length === 0) {
+          toast.error("特定のユーザーが指定されていません。");
           return;
         }
       }
@@ -1040,13 +1215,24 @@ export default function Home() {
       }
 
       if (sourceType === "user") {
-        let currentDid = sourceUserDid;
-        if (!currentDid.trim() && sourceUserHandle.trim()) {
-          const resolved = await resolveHandleToDid(sourceUserHandle);
-          if (resolved) currentDid = resolved;
+        let currentDids = [...sourceUserDids];
+        if (currentDids.length === 0 && sourceUserHandlesInput.trim()) {
+          const handle = sourceUserHandlesInput.replace(/^@/, "").trim();
+          try {
+            const res = await fetch(`https://public.api.bsky.app/xrpc/app.bsky.actor.getProfile?actor=${encodeURIComponent(handle)}`);
+            const data = await res.json();
+            if (data && !data.error && data.did) {
+              currentDids.push(data.did);
+              setSourceUserDids(prev => [...new Set([...prev, data.did])]);
+              setSourceUserHandles(prev => [...new Set([...prev, data.handle])]);
+              setSourceUserHandlesInput("");
+            }
+          } catch (e) {
+            console.error(e);
+          }
         }
-        if (!currentDid.trim()) {
-          toast.error("特定のユーザーのハンドル名を入力してください。");
+        if (currentDids.length === 0) {
+          toast.error("特定のユーザーが指定されていません。");
           setStep(1);
           return;
         }
@@ -1523,14 +1709,14 @@ export default function Home() {
                       
                       <CardHeader className="p-5 pb-3 shrink-0">
                         <div className="flex items-start justify-between gap-3">
-                          <div className="flex items-center gap-3 min-w-0">
+                          <div className="flex items-center gap-3 min-w-0 flex-1">
                             {feed.avatarCid ? (
-                              <div className="w-10 h-10 rounded-xl overflow-hidden shrink-0 border border-slate-800">
-                                <img 
+                              <div className="w-10 h-10 rounded-xl overflow-hidden shrink-0 border border-slate-800 flex items-center justify-center bg-slate-900">
+                                <SafeImage 
                                   src={`${apiBaseUrl}/api/get_blob?did=${encodeURIComponent(feed.repo)}&cid=${encodeURIComponent(feed.avatarCid)}`} 
                                   alt={feed.displayName || feed.rkey} 
                                   className="w-full h-full object-cover"
-                                  crossOrigin="use-credentials"
+                                  fallback={<Compass className="w-5 h-5 text-slate-500" />}
                                 />
                               </div>
                             ) : (
@@ -1538,9 +1724,9 @@ export default function Home() {
                                 <Compass className="w-5 h-5 text-slate-500" />
                               </div>
                             )}
-                            <div className="min-w-0">
+                            <div className="min-w-0 flex-1">
                               <div className="flex items-center gap-1.5 flex-wrap">
-                                <h3 className="font-bold text-slate-200 text-sm truncate max-w-[120px] sm:max-w-[150px]" title={feed.displayName || feed.rkey}>
+                                <h3 className="font-bold text-slate-200 text-sm truncate" title={feed.displayName || feed.rkey}>
                                   {feed.displayName || feed.rkey}
                                 </h3>
                                 <Badge 
@@ -1554,52 +1740,10 @@ export default function Home() {
                                   {isSearch ? "Search" : "Filter"}
                                 </Badge>
                               </div>
-                              <p className="text-[9px] text-slate-500 font-mono truncate max-w-[160px]" title={feed.rkey}>
+                              <p className="text-[9px] text-slate-500 font-mono truncate" title={feed.rkey}>
                                 key: {feed.rkey}
                               </p>
                             </div>
-                          </div>
-
-                          {/* Actions */}
-                          <div className="flex items-center gap-1 shrink-0">
-                            <Button
-                              size="icon"
-                              variant="ghost"
-                              className="w-7 h-7 rounded-lg text-amber-400 hover:text-amber-300 hover:bg-amber-950/20"
-                              onClick={() => handleStartEdit(feed)}
-                              title="編集"
-                            >
-                              <Pencil className="w-3.5 h-3.5" />
-                            </Button>
-                            <Button
-                              size="icon"
-                              variant="ghost"
-                              className="w-7 h-7 rounded-lg text-blue-400 hover:text-blue-300 hover:bg-blue-950/20"
-                              onClick={() => {
-                                const url = `https://bsky.app/profile/${feed.repo}/feed/${feed.rkey}`;
-                                window.open(url, "_blank");
-                              }}
-                              title="Blueskyで試す"
-                            >
-                              <ExternalLink className="w-3.5 h-3.5" />
-                            </Button>
-                            <Button
-                              size="icon"
-                              variant="ghost"
-                              className="w-7 h-7 rounded-lg text-rose-400 hover:text-rose-300 hover:bg-rose-950/20"
-                              onClick={() => {
-                                setFeedToDelete(feed.rkey);
-                                setDeleteConfirmOpen(true);
-                              }}
-                              disabled={isDeleting === feed.rkey}
-                              title="削除"
-                            >
-                              {isDeleting === feed.rkey ? (
-                                <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                              ) : (
-                                <Trash2 className="w-3.5 h-3.5" />
-                              )}
-                            </Button>
                           </div>
                         </div>
                       </CardHeader>
@@ -1617,6 +1761,51 @@ export default function Home() {
 
                         <div className="bg-[#030408]/60 p-3 rounded-xl border border-[#0d0e15] font-mono text-[9px] text-slate-400 max-h-24 overflow-y-auto whitespace-pre-wrap select-text leading-relaxed shrink-0">
                           {queryText}
+                        </div>
+
+                        {/* Actions */}
+                        <div className="flex items-center justify-between border-t border-slate-900/60 pt-3 mt-1 shrink-0">
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-8 rounded-lg text-amber-400 hover:text-amber-300 hover:bg-amber-950/20 px-2.5 text-xs gap-1.5 flex items-center"
+                            onClick={() => handleStartEdit(feed)}
+                            title="編集"
+                          >
+                            <Pencil className="w-3.5 h-3.5" />
+                            <span>編集</span>
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-8 rounded-lg text-blue-400 hover:text-blue-300 hover:bg-blue-950/20 px-2.5 text-xs gap-1.5 flex items-center"
+                            onClick={() => {
+                              const url = `https://bsky.app/profile/${feed.repo}/feed/${feed.rkey}`;
+                              window.open(url, "_blank");
+                            }}
+                            title="Blueskyで試す"
+                          >
+                            <ExternalLink className="w-3.5 h-3.5" />
+                            <span>試す</span>
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-8 rounded-lg text-rose-400 hover:text-rose-300 hover:bg-rose-950/20 px-2.5 text-xs gap-1.5 flex items-center"
+                            onClick={() => {
+                              setFeedToDelete(feed.rkey);
+                              setDeleteConfirmOpen(true);
+                            }}
+                            disabled={isDeleting === feed.rkey}
+                            title="削除"
+                          >
+                            {isDeleting === feed.rkey ? (
+                              <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                            ) : (
+                              <Trash2 className="w-3.5 h-3.5" />
+                            )}
+                            <span>削除</span>
+                          </Button>
                         </div>
                       </CardContent>
                     </Card>
@@ -1706,15 +1895,15 @@ export default function Home() {
                               value={rawCondition}
                               onChange={(e) => setRawCondition(e.target.value)}
                               rows={8}
-                              placeholder={`source {\n  all(newest)\n}\nfilter {\n  text containsAny ["猫"]\n}`}
+                               placeholder="keyword(猫,ねこ,ネコ) && hasimage()"
                               className="w-full bg-slate-900/60 border border-slate-800 rounded-xl p-3 font-mono text-xs text-slate-100 placeholder:text-slate-600 focus:outline-none focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/20 resize-none select-text"
                             />
                           </div>
                           <div className="bg-slate-900/20 border border-slate-900 p-3 rounded-lg flex gap-2">
                             <Info className="w-4 h-4 text-blue-400 shrink-0 mt-0.5" />
                             <div className="text-[10px] text-slate-400 leading-normal space-y-1">
-                              <p>検索型クエリは `source` セクションと `filter` セクションで記述します。</p>
-                              <p>ダブルクォーテーションが含まれる場合はエスケープするか、配列形式 `["単語"]` をご利用ください。</p>
+                              <p>フィルター型クエリは論理演算子 <code>&&</code> (AND)、<code>||</code> (OR)、<code>!</code> (NOT) と <code>keyword()</code> や <code>hasimage()</code> などの関数を使って記述します。</p>
+                              <p>例: <code>from($me) && chars("meet")</code></p>
                             </div>
                           </div>
                         </div>
@@ -1779,7 +1968,12 @@ export default function Home() {
                             <div className="flex items-center gap-4 bg-slate-900/40 border border-slate-900 p-4 rounded-xl">
                               <div className="w-16 h-16 rounded-xl overflow-hidden bg-slate-950 border border-slate-800 flex items-center justify-center shrink-0">
                                 {avatarPreview ? (
-                                  <img src={avatarPreview} alt="Preview" className="w-full h-full object-cover" />
+                                  <SafeImage 
+                                    src={avatarPreview} 
+                                    alt="Preview" 
+                                    className="w-full h-full object-cover" 
+                                    fallback={<div className="w-full h-full bg-slate-950/40 flex items-center justify-center text-slate-600 text-xs animate-pulse">読み込み中...</div>}
+                                  />
                                 ) : (
                                   <Compass className="w-8 h-8 text-slate-600 animate-pulse" />
                                 )}
@@ -1835,29 +2029,6 @@ export default function Home() {
                       {step === 1 ? (
                         /* STEP 1: SEARCH CRITERIA */
                         <div className="space-y-5 animate-in fade-in duration-300">
-                          {/* Feed Type */}
-                          <div className="space-y-2 pb-4 border-b border-slate-900/60">
-                            <Label className="text-xs font-semibold text-slate-300">
-                              フィードタイプ
-                            </Label>
-                            <div className="flex gap-2">
-                              <button
-                                type="button"
-                                onClick={() => setFeedType("Search")}
-                                className="flex-1 py-2.5 rounded-xl border text-xs font-medium transition-all bg-blue-950/40 border-blue-800/80 text-blue-400 shadow-[0_0_15px_rgba(34,139,230,0.1)]"
-                              >
-                                検索型 (Search)
-                              </button>
-                              <button
-                                type="button"
-                                disabled
-                                className="flex-1 py-2.5 rounded-xl border border-slate-900 bg-slate-950/40 text-slate-600 text-xs font-medium opacity-50 cursor-not-allowed"
-                                title="現在開発中につき選択できません"
-                              >
-                                フィルター型 (Filter) [開発中]
-                              </button>
-                            </div>
-                          </div>
                           {/* Source Selection */}
                           <div className="space-y-2">
                             <Label htmlFor="source-type" className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
@@ -1871,33 +2042,25 @@ export default function Home() {
                               className="w-full bg-slate-900/60 border border-slate-800 rounded-xl p-3.5 text-sm text-slate-100 focus:outline-none focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/20 cursor-pointer"
                             >
                               <option value="all" className="bg-slate-950 text-slate-100">全員の投稿</option>
-                              <option value="me" className="bg-slate-950 text-slate-100">あなたの投稿</option>
-                              <option value="user" className="bg-slate-950 text-slate-100">特定のユーザーの投稿</option>
+                              <option value="me" disabled className="bg-slate-950 text-slate-500">あなたの投稿（停止中）</option>
+                              <option value="user" disabled className="bg-slate-950 text-slate-500">特定のユーザー（停止中）</option>
                             </select>
                           </div>
 
                           {sourceType === "user" && (
                             <div className="space-y-2 border-l-2 border-blue-900/60 pl-3 animate-in slide-in-from-left-2 duration-300 relative">
-                              <Label htmlFor="source-user-handle" className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
+                              <Label htmlFor="source-user-handles" className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
                                 特定のユーザーのハンドル名
                                 <Badge variant="outline" className="text-[9px] py-0 border-slate-800 text-slate-400 font-mono">必須</Badge>
                               </Label>
                               <div className="relative">
-                                <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 text-sm select-none">@</span>
-                                <Input
-                                  id="source-user-handle"
-                                  type="text"
-                                  value={sourceUserHandle}
-                                  onChange={(e) => {
-                                    setSourceUserHandle(e.target.value);
-                                    if (selectedActor && selectedActor.handle !== e.target.value) {
-                                      setSelectedActor(null);
-                                      setSourceUserDid("");
-                                    }
-                                  }}
-                                  placeholder="例: alice.bsky.social"
-                                  required={sourceType === "user"}
-                                  className="bg-slate-900/60 border-slate-800 text-slate-100 placeholder:text-slate-600 focus-visible:ring-blue-500/50 py-5 pl-9 pr-10 rounded-xl w-full"
+                                <TagsInput
+                                  value={sourceUserHandles}
+                                  onChange={handleSourceHandlesChange}
+                                  inputValue={sourceUserHandlesInput}
+                                  onInputValueChange={setSourceUserHandlesInput}
+                                  placeholder="例: alice.bsky.social (Enter/Space等で確定)"
+                                  disabled={isDeploying}
                                 />
                                 {isLoadingActorSuggestions && (
                                   <div className="absolute right-3 top-1/2 -translate-y-1/2">
@@ -1908,17 +2071,12 @@ export default function Home() {
 
                               {/* Suggestions Dropdown */}
                               {actorSuggestions.length > 0 && (
-                                <div className="absolute z-50 left-3 right-0 mt-1 bg-slate-950/95 border border-slate-805 rounded-xl shadow-2xl overflow-hidden max-h-60 overflow-y-auto backdrop-blur-xl">
+                                <div className="absolute z-50 left-0 right-0 mt-1 bg-slate-950/95 border border-slate-800/80 rounded-xl shadow-2xl overflow-hidden max-h-60 overflow-y-auto backdrop-blur-xl">
                                   {actorSuggestions.map((actor) => (
                                     <button
                                       key={actor.did}
                                       type="button"
-                                      onClick={() => {
-                                        setSourceUserDid(actor.did);
-                                        setSelectedActor(actor);
-                                        setSourceUserHandle(actor.handle);
-                                        setActorSuggestions([]);
-                                      }}
+                                      onClick={() => handleSelectActor(actor)}
                                       className="w-full px-4 py-3 text-left hover:bg-slate-900 flex items-center gap-3 transition-colors border-b border-slate-900/60 last:border-0"
                                     >
                                       {actor.avatar ? (
@@ -1940,34 +2098,35 @@ export default function Home() {
                                   ))}
                                 </div>
                               )}
-
-                              {/* Selected Actor Details Card */}
-                              {selectedActor && (
-                                <div className="mt-2 p-3 bg-blue-950/15 border border-blue-900/30 rounded-xl flex items-center gap-3 animate-in fade-in duration-300">
-                                  {selectedActor.avatar ? (
-                                    <img src={selectedActor.avatar} alt={selectedActor.handle} className="w-9 h-9 rounded-full bg-slate-800 object-cover border border-blue-900/40" />
-                                  ) : (
-                                    <div className="w-9 h-9 rounded-full bg-slate-800 flex items-center justify-center text-xs text-slate-400 font-bold">
-                                      {selectedActor.handle.slice(0, 2).toUpperCase()}
-                                    </div>
-                                  )}
-                                  <div className="min-w-0 flex-1">
-                                    <div className="text-xs font-semibold text-slate-200 truncate">
-                                      {selectedActor.displayName || selectedActor.handle}
-                                    </div>
-                                    <div className="text-[9px] text-slate-400 font-mono mt-0.5">
-                                      {selectedActor.did}
-                                    </div>
-                                  </div>
-                                  <div className="text-[9px] font-bold text-emerald-500 bg-emerald-950/40 border border-emerald-900/50 px-2 py-0.5 rounded-full uppercase tracking-wider font-mono">
-                                    確定
-                                  </div>
-                                </div>
-                              )}
-
-                              <input type="hidden" name="sourceUserDid" value={sourceUserDid} />
                             </div>
                           )}
+
+                          {/* ALT Search Expansion Option */}
+                          <div className="flex items-center justify-between p-3.5 bg-slate-900/40 border border-slate-800/80 rounded-xl animate-in fade-in duration-300">
+                            <div className="space-y-0.5 pr-4">
+                              <Label htmlFor="expand-alt" className="text-xs font-semibold text-slate-200 cursor-pointer flex items-center gap-1.5">
+                                <ImageIcon className="w-3.5 h-3.5 text-blue-400" />
+                                画像・動画のALTも含める
+                              </Label>
+                              <p className="text-[10px] text-slate-500">
+                                単語・テキスト検索時に、画像と動画の説明テキスト（ALT）も検索範囲に自動で含めます。
+                              </p>
+                            </div>
+                            <button
+                              id="expand-alt"
+                              type="button"
+                              onClick={() => setExpandToAlt(!expandToAlt)}
+                              className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-blue-500/20 ${
+                                expandToAlt ? "bg-blue-600" : "bg-slate-800"
+                              }`}
+                            >
+                              <span
+                                className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                                  expandToAlt ? "translate-x-5" : "translate-x-0"
+                                }`}
+                              />
+                            </button>
+                          </div>
 
                           {/* Include Raw Words (部分一致 / text.raw) */}
                           <div className="space-y-2 border-t border-slate-900/60 pt-4">
@@ -2005,7 +2164,7 @@ export default function Home() {
                           </div>
 
                           {/* Include Words (単語一致 / 形態素) */}
-                          <div className="space-y-2 border-l-2 border-blue-900/60 pl-3">
+                          <div className="space-y-2 border-t border-slate-900/60 pt-4">
                             <Label htmlFor="include" className="text-xs font-semibold text-slate-300 flex items-center justify-between">
                               <span className="flex items-center gap-1.5">
                                 <CheckCircle className="w-3.5 h-3.5 text-blue-400" />
@@ -2043,10 +2202,30 @@ export default function Home() {
 
                           {/* Tags (Convert to text.raw contains "#tag") */}
                           <div className="space-y-2 border-t border-slate-900/60 pt-4">
-                            <Label htmlFor="tags" className="text-xs font-semibold text-slate-300 flex items-center gap-1.5 flex-wrap">
-                              <Tags className="w-3.5 h-3.5 text-blue-400" />
-                              タグ
-                              <Badge variant="outline" className="text-[9px] py-0 border-amber-900/60 text-amber-500 font-mono ml-1">いずれか必須</Badge>
+                            <Label htmlFor="tags" className="text-xs font-semibold text-slate-300 flex items-center justify-between gap-1.5 flex-wrap">
+                              <span className="flex items-center gap-1.5">
+                                <Tags className="w-3.5 h-3.5 text-blue-400" />
+                                タグ
+                                <Badge variant="outline" className="text-[9px] py-0 border-amber-900/60 text-amber-500 font-mono ml-1">いずれか必須</Badge>
+                              </span>
+                              {(tags.length > 0 || tagsInput.trim().length > 0) && (
+                                <div className="flex gap-1">
+                                  <button
+                                    type="button"
+                                    onClick={() => setTagsMode("OR")}
+                                    className={`text-[10px] font-mono px-2 py-0.5 rounded transition ${tagsMode === "OR" ? "bg-blue-950/60 border border-blue-800/40 text-blue-400" : "text-slate-500 hover:text-slate-300"}`}
+                                  >
+                                    キーワードとOR結合 (原則)
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setTagsMode("AND")}
+                                    className={`text-[10px] font-mono px-2 py-0.5 rounded transition ${tagsMode === "AND" ? "bg-blue-950/60 border border-blue-800/40 text-blue-400" : "text-slate-500 hover:text-slate-300"}`}
+                                  >
+                                    キーワードとAND結合
+                                  </button>
+                                </div>
+                              )}
                             </Label>
                             <TagsInput
                               value={tags}
@@ -2058,21 +2237,6 @@ export default function Home() {
                             />
                           </div>
 
-                          {/* Languages */}
-                          <div className="space-y-2">
-                            <Label htmlFor="langs" className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
-                              <Globe className="w-3.5 h-3.5 text-blue-400" />
-                              言語コード
-                            </Label>
-                            <Input
-                              id="langs"
-                              type="text"
-                              value={langs}
-                              onChange={(e) => setLangs(e.target.value)}
-                              placeholder="例: ja (未入力の場合は全言語対象)"
-                              className="bg-slate-900/60 border-slate-800 text-slate-100 placeholder:text-slate-600 focus-visible:ring-blue-500/50 py-5 rounded-xl"
-                            />
-                          </div>
 
                           {/* Filters (Reply & Media) */}
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 border-t border-slate-900/60 pt-4">
@@ -2184,7 +2348,7 @@ export default function Home() {
                           </div>
 
                           {/* Exclude Words (単語一致 / 形態素) */}
-                          <div className="space-y-2 border-l-2 border-rose-950/40 pl-3">
+                          <div className="space-y-2 border-t border-slate-900/60 pt-4">
                             <Label htmlFor="exclude" className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
                               <AlertCircle className="w-3.5 h-3.5 text-rose-500/80" />
                               除外する単語（単語一致 / 形態素）
@@ -2199,16 +2363,6 @@ export default function Home() {
                             />
                           </div>
 
-                          {/* Query Live Preview */}
-                          <div className="space-y-2 border-t border-slate-900/60 pt-4">
-                            <Label className="text-[10px] font-mono text-slate-500 flex items-center gap-1">
-                              <Eye className="w-3 h-3" />
-                              生成されるクエリのプレビュー
-                            </Label>
-                            <pre className="bg-[#030408] border border-slate-900/80 p-3 rounded-lg text-slate-400 font-mono text-[10px] whitespace-pre overflow-x-auto select-text max-h-40">
-                              {generatedCondition}
-                            </pre>
-                          </div>
                         </div>
                       ) : (
                         /* STEP 2: FEED METADATA FOR SIMPLE MODE */
@@ -2271,7 +2425,12 @@ export default function Home() {
                             <div className="flex items-center gap-4 bg-slate-900/40 border border-slate-900 p-4 rounded-xl">
                               <div className="w-16 h-16 rounded-xl overflow-hidden bg-slate-950 border border-slate-800 flex items-center justify-center shrink-0">
                                 {avatarPreview ? (
-                                  <img src={avatarPreview} alt="Preview" className="w-full h-full object-cover" />
+                                  <SafeImage 
+                                    src={avatarPreview} 
+                                    alt="Preview" 
+                                    className="w-full h-full object-cover" 
+                                    fallback={<div className="w-full h-full bg-slate-950/40 flex items-center justify-center text-slate-600 text-xs animate-pulse">読み込み中...</div>}
+                                  />
                                 ) : (
                                   <Compass className="w-8 h-8 text-slate-600 animate-pulse" />
                                 )}
@@ -2320,6 +2479,17 @@ export default function Home() {
 
                         </div>
                       )}
+
+                      {/* Query Live Preview */}
+                      <div className="space-y-2 border-t border-slate-900/60 pt-4 mt-5">
+                        <Label className="text-[10px] font-mono text-slate-500 flex items-center gap-1">
+                          <Eye className="w-3 h-3" />
+                          生成されるクエリのプレビュー
+                        </Label>
+                        <pre className="bg-[#030408] border border-slate-900/80 p-3 rounded-lg text-slate-400 font-mono text-[10px] whitespace-pre overflow-x-auto select-text max-h-40">
+                          {generatedCondition || "// 条件を入力すると、ここにクエリのプレビューが表示されます"}
+                        </pre>
+                      </div>
                     </>
                   )}
                 </CardContent>

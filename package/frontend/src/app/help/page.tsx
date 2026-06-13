@@ -248,6 +248,7 @@ export default function HelpPage() {
               Rito Feed Editor は、Bluesky（AT Protocol）上の
               <strong className="text-slate-200">カスタムフィード（Custom Feed）</strong>
               を GUI で作成・管理するためのツールです。
+              なお、本サイトでサポートするのはフィルタ方式のみとなります。
             </p>
             <p className="text-sm text-slate-400 leading-relaxed">
               通常、カスタムフィードを作成するにはクエリ言語の知識が必要ですが、Rito Feed Editor を使えば
@@ -334,7 +335,7 @@ export default function HelpPage() {
               <Step number={1} title="ステップ 1：検索条件を設定する">
                 <p>
                   フィードに表示したい投稿の絞り込み条件を入力します。
-                  「含める単語」「除外する単語」「タグ」「言語コード」「取得元（ソース）」を設定できます。
+                  「含める単語」「タグ」「除外する単語」「取得元（ソース）」を設定できます。
                 </p>
                 <p className="pt-1">
                   設定が終わったら「次へ進む」をクリックしてステップ 2 へ進みます。
@@ -417,19 +418,6 @@ export default function HelpPage() {
                 </p>
               </div>
 
-              {/* Exclude words */}
-              <div className="p-4 rounded-xl border border-slate-800/60 bg-slate-900/40 space-y-2">
-                <div className="flex items-center gap-2">
-                  <AlertCircle className="w-4 h-4 text-rose-400" />
-                  <p className="text-sm font-semibold text-slate-200">除外する単語</p>
-                </div>
-                <p className="text-xs text-slate-400 leading-relaxed">
-                  指定した単語を含む投稿をフィードから除外します。
-                  「含める単語」と同様に、部分一致と単語一致の 2 種類があります。
-                  スパムや特定の話題を除きたい場合に使います。
-                </p>
-              </div>
-
               {/* Tags */}
               <div className="p-4 rounded-xl border border-slate-800/60 bg-slate-900/40 space-y-2">
                 <div className="flex items-center gap-2">
@@ -450,21 +438,19 @@ export default function HelpPage() {
                 </Note>
               </div>
 
-              {/* Language */}
+              {/* Exclude words */}
               <div className="p-4 rounded-xl border border-slate-800/60 bg-slate-900/40 space-y-2">
                 <div className="flex items-center gap-2">
-                  <Globe className="w-4 h-4 text-sky-400" />
-                  <p className="text-sm font-semibold text-slate-200">言語コード</p>
+                  <AlertCircle className="w-4 h-4 text-rose-400" />
+                  <p className="text-sm font-semibold text-slate-200">除外する単語</p>
                 </div>
                 <p className="text-xs text-slate-400 leading-relaxed">
-                  投稿の言語を絞り込みます。日本語のみの場合は{" "}
-                  <code className="font-mono text-slate-300">ja</code>、英語のみなら{" "}
-                  <code className="font-mono text-slate-300">en</code> と入力します。
-                  空欄にすると全言語の投稿が対象になります。
-                  複数言語を指定する場合はカンマ区切りで入力します（例:{" "}
-                  <code className="font-mono text-slate-300">ja, en</code>）。
+                  指定した単語を含む投稿をフィードから除外します。
+                  「含める単語」と同様に、部分一致と単語一致の 2 種類があります。
+                  スパムや特定の話題を除きたい場合に使います。
                 </p>
               </div>
+
             </div>
           </Section>
 
@@ -500,7 +486,7 @@ export default function HelpPage() {
                   {
                     label: "フィードタイプ",
                     required: false,
-                    desc: "検索型（Search）はキーワードやタグで投稿を検索するタイプです。フィルター型（Filter）は開発中のため現在は選択できません。",
+                    desc: "本ツールでは、Jetstreamからリアルタイムに流れてくるポストを高速にフィルタリングする「フィルター型（Filter）」のみに対応しています。",
                   },
                 ].map((item) => (
                   <div
@@ -585,29 +571,14 @@ export default function HelpPage() {
             <div className="bg-slate-900/80 rounded-xl border border-slate-800 p-4 font-mono text-sm text-slate-300">
               <p className="text-slate-500 text-xs mb-2">{"// クエリ例"}</p>
               <p>
-                <span className="text-violet-400">source</span>{" "}
-                <span className="text-slate-400">{"{"}</span>
-              </p>
-              <p className="pl-4">
-                <span className="text-blue-400">all</span>
-                <span className="text-slate-400">(newest)</span>
-              </p>
-              <p className="text-slate-400">{"}"}</p>
-              <p>
-                <span className="text-violet-400">filter</span>{" "}
-                <span className="text-slate-400">{"{"}</span>
-              </p>
-              <p className="pl-4">
-                <span className="text-blue-400">text.raw</span>{" "}
-                <span className="text-emerald-400">contains</span>{" "}
+                <span className="text-blue-400">keyword</span>
+                <span className="text-slate-400">(</span>
                 <span className="text-amber-300">&quot;けいおん&quot;</span>
+                <span className="text-slate-400">)</span>{" "}
+                <span className="text-violet-400">&amp;&amp;</span>{" "}
+                <span className="text-blue-400">hasimage</span>
+                <span className="text-slate-400">()</span>
               </p>
-              <p className="pl-4">
-                <span className="text-blue-400">and langs</span>{" "}
-                <span className="text-emerald-400">containsAny</span>{" "}
-                <span className="text-amber-300">[&quot;ja&quot;]</span>
-              </p>
-              <p className="text-slate-400">{"}"}</p>
             </div>
 
             <Note type="warning">
