@@ -235,8 +235,8 @@ export default function HelpPage() {
                 >
                   @shigepon.net
                 </a>{" "}
-                さんの Bluesky カスタムフィード API サービスを利用しています。
-                しげぽんさんの API が提供するすべての機能を実装しているわけではありません。
+                さんの「Blueskyカスタムフィード作成ツールのAPI」サービスを利用しています。
+                このAPIが提供するすべての機能を実装しているわけではありません。
                 高度な条件指定や全機能を利用したい場合は、「クエリ直接編集」モードをお使いください。
               </p>
             </div>
@@ -295,7 +295,7 @@ export default function HelpPage() {
                   >
                     @passport
                   </a>{" "}
-                  は AT Protocol 向けの OAuth 認証サービスです。パスワードを直接入力しない安全な OAuth ログインです。
+                  を使うことで、ハンドルをこのサービス上で入力することなく、安全にログインできます。
                   「@passport でログイン」ボタンをクリックし、画面の指示に従ってください。
                 </p>
               </div>
@@ -642,7 +642,7 @@ export default function HelpPage() {
                 },
                 {
                   q: "@passport ログインとは？",
-                  a: "@passport は AT Protocol 向けの OAuth 認証サービスです。パスワードを直接入力せずに安全にログインできます。詳しくは atpassport.net を参照してください。",
+                  a: "ハンドルをこのサービス上で入力することなく、安全にログインできる仕組みです。詳しくは atpassport.net を参照してください。",
                 },
               ].map((item, i) => (
                 <div

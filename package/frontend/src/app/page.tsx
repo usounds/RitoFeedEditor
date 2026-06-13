@@ -94,6 +94,8 @@ export default function Home() {
   const [isLoadingFeeds, setIsLoadingFeeds] = useState(false);
   const [isDeploying, setIsDeploying] = useState(false);
   const [isDeleting, setIsDeleting] = useState<string | null>(null);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [feedToDelete, setFeedToDelete] = useState<string | null>(null);
 
   // Feed View & Edit States
   const [currentView, setCurrentView] = useState<"list" | "create" | "edit">("list");
@@ -121,6 +123,11 @@ export default function Home() {
   const [tags, setTags] = useState<string[]>([]);
   const [tagsInput, setTagsInput] = useState("");
   const [langs, setLangs] = useState("");
+  const [replyFilter, setReplyFilter] = useState<"all" | "only" | "exclude">("all");
+  const [imagesFilter, setImagesFilter] = useState<"all" | "only" | "exclude">("all");
+  const [videoFilter, setVideoFilter] = useState<"all" | "only" | "exclude">("all");
+  const [externalFilter, setExternalFilter] = useState<"all" | "only" | "exclude">("all");
+  const [labelsFilter, setLabelsFilter] = useState<"all" | "only" | "exclude">("all");
   const [sourceType, setSourceType] = useState<"all" | "me" | "user">("all");
   const [sourceUserDid, setSourceUserDid] = useState("");
   const [step, setStep] = useState<1 | 2>(1);
@@ -253,6 +260,41 @@ export default function Home() {
       }
     }
 
+    // 5. Reply
+    if (replyFilter === "only") {
+      parts.push("reply exists");
+    } else if (replyFilter === "exclude") {
+      parts.push("not (reply exists)");
+    }
+
+    // 6. Embed.images
+    if (imagesFilter === "only") {
+      parts.push("embed.images exists");
+    } else if (imagesFilter === "exclude") {
+      parts.push("not (embed.images exists)");
+    }
+
+    // 7. Embed.video
+    if (videoFilter === "only") {
+      parts.push("embed.video exists");
+    } else if (videoFilter === "exclude") {
+      parts.push("not (embed.video exists)");
+    }
+
+    // 8. Embed.external
+    if (externalFilter === "only") {
+      parts.push("embed.external exists");
+    } else if (externalFilter === "exclude") {
+      parts.push("not (embed.external exists)");
+    }
+
+    // 9. Labels
+    if (labelsFilter === "only") {
+      parts.push("labels exists");
+    } else if (labelsFilter === "exclude") {
+      parts.push("not (labels exists)");
+    }
+
     const filterSection = parts.length > 0 ? `\nfilter {\n  ${parts.join("\n  and ")}\n}` : "";
 
     let sourceStr = "all(newest)";
@@ -277,6 +319,11 @@ export default function Home() {
     tags,
     tagsInput,
     langs,
+    replyFilter,
+    imagesFilter,
+    videoFilter,
+    externalFilter,
+    labelsFilter,
     sourceType,
     sourceUserDid
   ]);
@@ -478,6 +525,11 @@ export default function Home() {
     setTags([]);
     setTagsInput("");
     setLangs("");
+    setReplyFilter("all");
+    setImagesFilter("all");
+    setVideoFilter("all");
+    setExternalFilter("all");
+    setLabelsFilter("all");
     setSourceType("all");
     setSourceUserDid("");
     setStep(1);
@@ -503,6 +555,11 @@ export default function Home() {
       setTags([]);
       setTagsInput("");
       setLangs("");
+      setReplyFilter("all");
+      setImagesFilter("all");
+      setVideoFilter("all");
+      setExternalFilter("all");
+      setLabelsFilter("all");
       setSourceType("all");
       setSourceUserDid("");
       setStep(1);
@@ -707,6 +764,56 @@ export default function Home() {
           const jsonStr = langMatch[1].replace(/'/g, '"');
           const parsedLangs = JSON.parse(jsonStr);
           setLangs(parsedLangs.join(", "));
+          continue;
+        }
+
+        // 8. Reply
+        if (trimmedClause === "reply exists") {
+          setReplyFilter("only");
+          continue;
+        }
+        if (trimmedClause === "not (reply exists)") {
+          setReplyFilter("exclude");
+          continue;
+        }
+
+        // 9. Images
+        if (trimmedClause === "embed.images exists") {
+          setImagesFilter("only");
+          continue;
+        }
+        if (trimmedClause === "not (embed.images exists)") {
+          setImagesFilter("exclude");
+          continue;
+        }
+
+        // 10. Video
+        if (trimmedClause === "embed.video exists") {
+          setVideoFilter("only");
+          continue;
+        }
+        if (trimmedClause === "not (embed.video exists)") {
+          setVideoFilter("exclude");
+          continue;
+        }
+
+        // 11. External
+        if (trimmedClause === "embed.external exists") {
+          setExternalFilter("only");
+          continue;
+        }
+        if (trimmedClause === "not (embed.external exists)") {
+          setExternalFilter("exclude");
+          continue;
+        }
+
+        // 12. Labels
+        if (trimmedClause === "labels exists") {
+          setLabelsFilter("only");
+          continue;
+        }
+        if (trimmedClause === "not (labels exists)") {
+          setLabelsFilter("exclude");
           continue;
         }
 
@@ -953,12 +1060,7 @@ export default function Home() {
       toast.dismiss(loadingToast);
       toast.success(isEditing ? "フィードの更新に成功しました！" : "フィードの反映に成功しました！");
 
-      if (user?.did) {
-        const bskyUrl = `https://bsky.app/profile/${user.did}/feed/${rkey.trim()}`;
-        setTimeout(() => {
-          window.open(bskyUrl, "_blank");
-        }, 1000);
-      }
+
 
       // Reset Form & reload list
       handleCancelEdit();
@@ -1065,7 +1167,7 @@ export default function Home() {
           <div className="flex items-center gap-3">
             <div className="relative w-8 h-8 rounded-lg overflow-hidden bg-gradient-to-tr from-blue-600 to-blue-400 p-[1px]">
               <div className="w-full h-full bg-[#0f1624] flex items-center justify-center rounded-lg">
-                <Compass className="w-4 h-4 text-blue-400 animate-pulse" />
+                <span className="text-blue-400 font-bold text-base leading-none">#</span>
               </div>
             </div>
             <div>
@@ -1095,9 +1197,9 @@ export default function Home() {
               } />
               <DialogContent className="bg-slate-950 border-slate-800 text-slate-100 max-w-sm rounded-xl">
                 <DialogHeader>
-                  <DialogTitle className="text-lg font-bold">APIサーバー接続設定</DialogTitle>
+                  <DialogTitle className="text-lg font-bold">Blueskyカスタムフィード作成ツールのAPI接続設定</DialogTitle>
                   <DialogDescription className="text-slate-400 text-xs">
-                    カスタムフィード管理APIサーバーのベースURLを指定します。
+                    Blueskyカスタムフィード作成ツールのAPIのベースURLを指定します。
                   </DialogDescription>
                 </DialogHeader>
                 <div className="space-y-4 py-4">
@@ -1195,7 +1297,7 @@ export default function Home() {
                     {AtPassportUI.ja.title}
                   </Button>
                   <p className="text-[11px] text-slate-400 leading-normal text-center px-1">
-                    {AtPassportUI.ja.description}
+                    ハンドルをこのサービス上で入力することなく、安全にログインできます。
                   </p>
                 </div>
 
@@ -1383,9 +1485,8 @@ export default function Home() {
                               variant="ghost"
                               className="w-7 h-7 rounded-lg text-rose-400 hover:text-rose-300 hover:bg-rose-950/20"
                               onClick={() => {
-                                if (confirm(`本当にフィード「${feed.rkey}」を削除しますか？\n（この操作は元に戻せません）`)) {
-                                  handleDeleteFeed(feed.rkey);
-                                }
+                                setFeedToDelete(feed.rkey);
+                                setDeleteConfirmOpen(true);
                               }}
                               disabled={isDeleting === feed.rkey}
                               title="削除"
@@ -1757,37 +1858,7 @@ export default function Home() {
                             />
                           </div>
 
-                          {/* Exclude Raw Words (部分一致) */}
-                          <div className="space-y-2 border-t border-slate-900/60 pt-4">
-                            <Label htmlFor="exclude-raw" className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
-                              <AlertCircle className="w-3.5 h-3.5 text-rose-400" />
-                              除外する単語（部分一致 / 生テキスト）
-                            </Label>
-                            <TagsInput
-                              value={excludeRawWords}
-                              onChange={setExcludeRawWords}
-                              inputValue={excludeRawInput}
-                              onInputValueChange={setExcludeRawInput}
-                              placeholder="例: 犬, いぬ (部分一致で除外します。Enter/Space等で確定)"
-                              disabled={isDeploying}
-                            />
-                          </div>
 
-                          {/* Exclude Words (単語一致 / 形態素) */}
-                          <div className="space-y-2 border-l-2 border-rose-950/40 pl-3">
-                            <Label htmlFor="exclude" className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
-                              <AlertCircle className="w-3.5 h-3.5 text-rose-500/80" />
-                              除外する単語（単語一致 / 形態素）
-                            </Label>
-                            <TagsInput
-                              value={excludeWords}
-                              onChange={setExcludeWords}
-                              inputValue={excludeInput}
-                              onInputValueChange={setExcludeInput}
-                              placeholder="例: 犬, いぬ (形態素の完全一致で除外します。Enter/Space等で確定)"
-                              disabled={isDeploying}
-                            />
-                          </div>
 
                           {/* Tags (Convert to text.raw contains "#tag") */}
                           <div className="space-y-2 border-t border-slate-900/60 pt-4">
@@ -1819,6 +1890,131 @@ export default function Home() {
                               onChange={(e) => setLangs(e.target.value)}
                               placeholder="例: ja (未入力の場合は全言語対象)"
                               className="bg-slate-900/60 border-slate-800 text-slate-100 placeholder:text-slate-600 focus-visible:ring-blue-500/50 py-5 rounded-xl"
+                            />
+                          </div>
+
+                          {/* Filters (Reply & Media) */}
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 border-t border-slate-900/60 pt-4">
+                            {/* Reply Filter */}
+                            <div className="space-y-2">
+                              <Label htmlFor="reply-filter" className="text-xs font-semibold text-slate-300">
+                                返信（リプライ）の扱い
+                              </Label>
+                              <select
+                                id="reply-filter"
+                                value={replyFilter}
+                                onChange={(e) => setReplyFilter(e.target.value as "all" | "only" | "exclude")}
+                                disabled={isDeploying}
+                                className="w-full bg-slate-900/60 border border-slate-800 rounded-xl px-3 py-2.5 text-xs text-slate-100 focus:outline-none focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/20"
+                              >
+                                <option value="all">すべて含める</option>
+                                <option value="only">返信のみにする</option>
+                                <option value="exclude">返信を除外する</option>
+                              </select>
+                            </div>
+
+                            {/* Images Filter */}
+                            <div className="space-y-2">
+                              <Label htmlFor="images-filter" className="text-xs font-semibold text-slate-300">
+                                画像付き投稿の扱い
+                              </Label>
+                              <select
+                                id="images-filter"
+                                value={imagesFilter}
+                                onChange={(e) => setImagesFilter(e.target.value as "all" | "only" | "exclude")}
+                                disabled={isDeploying}
+                                className="w-full bg-slate-900/60 border border-slate-800 rounded-xl px-3 py-2.5 text-xs text-slate-100 focus:outline-none focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/20"
+                              >
+                                <option value="all">すべて含める</option>
+                                <option value="only">画像付きのみにする</option>
+                                <option value="exclude">画像付きを除外する</option>
+                              </select>
+                            </div>
+
+                            {/* Video Filter */}
+                            <div className="space-y-2">
+                              <Label htmlFor="video-filter" className="text-xs font-semibold text-slate-300">
+                                動画付き投稿の扱い
+                              </Label>
+                              <select
+                                id="video-filter"
+                                value={videoFilter}
+                                onChange={(e) => setVideoFilter(e.target.value as "all" | "only" | "exclude")}
+                                disabled={isDeploying}
+                                className="w-full bg-slate-900/60 border border-slate-800 rounded-xl px-3 py-2.5 text-xs text-slate-100 focus:outline-none focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/20"
+                              >
+                                <option value="all">すべて含める</option>
+                                <option value="only">動画付きのみにする</option>
+                                <option value="exclude">動画付きを除外する</option>
+                              </select>
+                            </div>
+
+                            {/* External Link Filter */}
+                            <div className="space-y-2">
+                              <Label htmlFor="external-filter" className="text-xs font-semibold text-slate-300">
+                                リンク（カード）付き投稿の扱い
+                              </Label>
+                              <select
+                                id="external-filter"
+                                value={externalFilter}
+                                onChange={(e) => setExternalFilter(e.target.value as "all" | "only" | "exclude")}
+                                disabled={isDeploying}
+                                className="w-full bg-slate-900/60 border border-slate-800 rounded-xl px-3 py-2.5 text-xs text-slate-100 focus:outline-none focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/20"
+                              >
+                                <option value="all">すべて含める</option>
+                                <option value="only">リンク付きのみにする</option>
+                                <option value="exclude">リンク付きを除外する</option>
+                              </select>
+                            </div>
+
+                            {/* Labels Filter */}
+                            <div className="space-y-2">
+                              <Label htmlFor="labels-filter" className="text-xs font-semibold text-slate-300">
+                                ラベル（セルフラベルなど）付き投稿の扱い
+                              </Label>
+                              <select
+                                id="labels-filter"
+                                value={labelsFilter}
+                                onChange={(e) => setLabelsFilter(e.target.value as "all" | "only" | "exclude")}
+                                disabled={isDeploying}
+                                className="w-full bg-slate-900/60 border border-slate-800 rounded-xl px-3 py-2.5 text-xs text-slate-100 focus:outline-none focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/20"
+                              >
+                                <option value="all">すべて含める</option>
+                                <option value="only">ラベル付きのみにする</option>
+                                <option value="exclude">ラベル付きを除外する</option>
+                              </select>
+                            </div>
+                          </div>
+
+                          {/* Exclude Raw Words (部分一致) */}
+                          <div className="space-y-2 border-t border-slate-900/60 pt-4">
+                            <Label htmlFor="exclude-raw" className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
+                              <AlertCircle className="w-3.5 h-3.5 text-rose-400" />
+                              除外する単語（部分一致 / 生テキスト）
+                            </Label>
+                            <TagsInput
+                              value={excludeRawWords}
+                              onChange={setExcludeRawWords}
+                              inputValue={excludeRawInput}
+                              onInputValueChange={setExcludeRawInput}
+                              placeholder="例: 犬, いぬ (部分一致で除外します。Enter/Space等で確定)"
+                              disabled={isDeploying}
+                            />
+                          </div>
+
+                          {/* Exclude Words (単語一致 / 形態素) */}
+                          <div className="space-y-2 border-l-2 border-rose-950/40 pl-3">
+                            <Label htmlFor="exclude" className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
+                              <AlertCircle className="w-3.5 h-3.5 text-rose-500/80" />
+                              除外する単語（単語一致 / 形態素）
+                            </Label>
+                            <TagsInput
+                              value={excludeWords}
+                              onChange={setExcludeWords}
+                              inputValue={excludeInput}
+                              onInputValueChange={setExcludeInput}
+                              placeholder="例: 犬, いぬ (形態素の完全一致で除外します。Enter/Space等で確定)"
+                              disabled={isDeploying}
                             />
                           </div>
 
@@ -2056,6 +2252,47 @@ export default function Home() {
           </div>
         </div>
       </footer>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
+        <DialogContent className="bg-slate-950 border-slate-800 text-slate-100 max-w-sm rounded-xl">
+          <DialogHeader>
+            <DialogTitle className="text-lg font-bold text-rose-400 flex items-center gap-2">
+              <AlertCircle className="w-5 h-5 text-rose-400" />
+              フィードを削除しますか？
+            </DialogTitle>
+            <DialogDescription className="text-slate-400 text-xs leading-relaxed">
+              本当にフィード「{feedToDelete}」を削除しますか？<br />
+              （この操作は元に戻せません）
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="flex gap-2 sm:gap-0 mt-4">
+            <Button
+              variant="ghost"
+              onClick={() => {
+                setDeleteConfirmOpen(false);
+                setFeedToDelete(null);
+              }}
+              className="hover:bg-slate-900 text-slate-400 hover:text-slate-200"
+            >
+              キャンセル
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => {
+                if (feedToDelete) {
+                  handleDeleteFeed(feedToDelete);
+                }
+                setDeleteConfirmOpen(false);
+                setFeedToDelete(null);
+              }}
+              className="bg-rose-600 hover:bg-rose-500 text-white font-medium"
+            >
+              削除する
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
