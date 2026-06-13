@@ -130,11 +130,87 @@ export default function Home() {
   const [labelsFilter, setLabelsFilter] = useState<"all" | "only" | "exclude">("all");
   const [sourceType, setSourceType] = useState<"all" | "me" | "user">("all");
   const [sourceUserDid, setSourceUserDid] = useState("");
+  const [sourceUserHandle, setSourceUserHandle] = useState("");
+  const [actorSuggestions, setActorSuggestions] = useState<any[]>([]);
+  const [selectedActor, setSelectedActor] = useState<any | null>(null);
+  const [isLoadingActorSuggestions, setIsLoadingActorSuggestions] = useState(false);
   const [step, setStep] = useState<1 | 2>(1);
   
   // Advanced Query Toggle
   const [isAdvanced, setIsAdvanced] = useState(false);
   const [rawCondition, setRawCondition] = useState("");
+
+  // Resolve Handle to DID helper
+  const resolveHandleToDid = async (handle: string): Promise<string | null> => {
+    try {
+      const cleanHandle = handle.replace(/^@/, "").trim();
+      if (!cleanHandle) return null;
+
+      const res = await fetch(`https://public.api.bsky.app/xrpc/app.bsky.actor.getProfile?actor=${encodeURIComponent(cleanHandle)}`);
+      const data = await res.json();
+      if (data && !data.error && data.did) {
+        setSelectedActor(data);
+        setSourceUserDid(data.did);
+        setSourceUserHandle(data.handle);
+        return data.did;
+      }
+      return null;
+    } catch (e) {
+      console.error("Failed to resolve handle to DID:", e);
+      return null;
+    }
+  };
+
+  // Fetch actor profile for display when DID changes (e.g. on edit)
+  useEffect(() => {
+    if (sourceUserDid.startsWith("did:")) {
+      if (selectedActor && selectedActor.did === sourceUserDid) return;
+      fetch(`https://public.api.bsky.app/xrpc/app.bsky.actor.getProfile?actor=${encodeURIComponent(sourceUserDid)}`)
+        .then(res => res.json())
+        .then(data => {
+          if (data && !data.error) {
+            setSelectedActor(data);
+            setSourceUserHandle(data.handle);
+          }
+        })
+        .catch(err => {
+          console.error("Failed to fetch actor profile for DID:", err);
+        });
+    } else {
+      setSelectedActor(null);
+      setSourceUserHandle("");
+    }
+  }, [sourceUserDid]);
+
+  // Search actors based on typing handle
+  useEffect(() => {
+    if (!sourceUserHandle.trim() || (selectedActor && selectedActor.handle === sourceUserHandle)) {
+      setActorSuggestions([]);
+      return;
+    }
+
+    const delayDebounceFn = setTimeout(() => {
+      setIsLoadingActorSuggestions(true);
+      fetch(`https://public.api.bsky.app/xrpc/app.bsky.actor.searchActorsTypeahead?q=${encodeURIComponent(sourceUserHandle)}&limit=5`)
+        .then(res => res.json())
+        .then(data => {
+          if (data && Array.isArray(data.actors)) {
+            setActorSuggestions(data.actors);
+          } else {
+            setActorSuggestions([]);
+          }
+        })
+        .catch(err => {
+          console.error("Failed to search actors:", err);
+          setActorSuggestions([]);
+        })
+        .finally(() => {
+          setIsLoadingActorSuggestions(false);
+        });
+    }, 450);
+
+    return () => clearTimeout(delayDebounceFn);
+  }, [sourceUserHandle, selectedActor]);
 
   // Set mount state and load configuration from local storage
   useEffect(() => {
@@ -532,6 +608,9 @@ export default function Home() {
     setLabelsFilter("all");
     setSourceType("all");
     setSourceUserDid("");
+    setSourceUserHandle("");
+    setSelectedActor(null);
+    setActorSuggestions([]);
     setStep(1);
     setIsAdvanced(false);
     setRawCondition("");
@@ -562,6 +641,9 @@ export default function Home() {
       setLabelsFilter("all");
       setSourceType("all");
       setSourceUserDid("");
+      setSourceUserHandle("");
+      setSelectedActor(null);
+      setActorSuggestions([]);
       setStep(1);
       setIsAdvanced(false);
       setRawCondition(query);
@@ -880,7 +962,7 @@ export default function Home() {
   };
 
   // Step 1 Validation & Go to Step 2
-  const handleNextStep = () => {
+  const handleNextStep = async () => {
     if (!isAdvanced) {
       const hasRawWords = includeRawWords.length > 0 || includeRawInput.trim().length > 0;
       const hasWords = includeWords.length > 0 || includeInput.trim().length > 0;
@@ -891,9 +973,23 @@ export default function Home() {
         return;
       }
 
-      if (sourceType === "user" && !sourceUserDid.trim()) {
-        toast.error("特定のユーザーのDIDを入力してください。");
-        return;
+      if (sourceType === "user") {
+        let currentDid = sourceUserDid;
+        if (!currentDid.trim() && sourceUserHandle.trim()) {
+          const loadingResolve = toast.loading("ハンドル名からDIDを解決中...");
+          const resolved = await resolveHandleToDid(sourceUserHandle);
+          toast.dismiss(loadingResolve);
+          if (resolved) {
+            currentDid = resolved;
+          } else {
+            toast.error("指定されたハンドル名が見つかりませんでした。");
+            return;
+          }
+        }
+        if (!currentDid.trim()) {
+          toast.error("特定のユーザーのハンドル名を入力してください。");
+          return;
+        }
       }
     }
     // タッチデバイス等のゴーストクリック（突き抜け）を防止するため、非同期でステップ遷移を行う
@@ -943,10 +1039,17 @@ export default function Home() {
         return;
       }
 
-      if (sourceType === "user" && !sourceUserDid.trim()) {
-        toast.error("特定のユーザーのDIDを入力してください。");
-        setStep(1);
-        return;
+      if (sourceType === "user") {
+        let currentDid = sourceUserDid;
+        if (!currentDid.trim() && sourceUserHandle.trim()) {
+          const resolved = await resolveHandleToDid(sourceUserHandle);
+          if (resolved) currentDid = resolved;
+        }
+        if (!currentDid.trim()) {
+          toast.error("特定のユーザーのハンドル名を入力してください。");
+          setStep(1);
+          return;
+        }
       }
     }
 
@@ -1543,15 +1646,17 @@ export default function Home() {
                 <CardTitle className="text-xl font-bold text-white flex items-center justify-between">
                   <span>{isEditing ? `フィードの編集: ${editingRkey}` : "新規カスタムフィードの作成"}</span>
                   <div className="flex items-center gap-2">
-                    <Button 
-                      variant="outline" 
-                      size="sm" 
-                      onClick={() => setIsAdvanced(!isAdvanced)}
-                      className="border-slate-800 bg-slate-900/40 text-[11px] px-2.5 h-8 text-slate-300 hover:text-white"
-                    >
-                      <Sliders className="w-3 h-3 mr-1.5" />
-                      {isAdvanced ? "フォーム入力" : "クエリ直接編集"}
-                    </Button>
+                    {step === 1 && (
+                      <Button 
+                        variant="outline" 
+                        size="sm" 
+                        onClick={() => setIsAdvanced(!isAdvanced)}
+                        className="border-slate-800 bg-slate-900/40 text-[11px] px-2.5 h-8 text-slate-300 hover:text-white"
+                      >
+                        <Sliders className="w-3 h-3 mr-1.5" />
+                        {isAdvanced ? "フォーム入力" : "クエリ直接編集"}
+                      </Button>
+                    )}
                   </div>
                 </CardTitle>
                 <CardDescription className="text-slate-400 text-xs">
@@ -1720,8 +1825,18 @@ export default function Home() {
                             </div>
                           </div>
 
+
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    /* SIMPLE FORM MODE with stepper */
+                    <>
+                      {step === 1 ? (
+                        /* STEP 1: SEARCH CRITERIA */
+                        <div className="space-y-5 animate-in fade-in duration-300">
                           {/* Feed Type */}
-                          <div className="space-y-2">
+                          <div className="space-y-2 pb-4 border-b border-slate-900/60">
                             <Label className="text-xs font-semibold text-slate-300">
                               フィードタイプ
                             </Label>
@@ -1743,15 +1858,6 @@ export default function Home() {
                               </button>
                             </div>
                           </div>
-                        </div>
-                      )}
-                    </div>
-                  ) : (
-                    /* SIMPLE FORM MODE with stepper */
-                    <>
-                      {step === 1 ? (
-                        /* STEP 1: SEARCH CRITERIA */
-                        <div className="space-y-5 animate-in fade-in duration-300">
                           {/* Source Selection */}
                           <div className="space-y-2">
                             <Label htmlFor="source-type" className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
@@ -1771,20 +1877,95 @@ export default function Home() {
                           </div>
 
                           {sourceType === "user" && (
-                            <div className="space-y-2 border-l-2 border-blue-900/60 pl-3 animate-in slide-in-from-left-2 duration-300">
-                              <Label htmlFor="source-user-did" className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
-                                特定のユーザーのDID
+                            <div className="space-y-2 border-l-2 border-blue-900/60 pl-3 animate-in slide-in-from-left-2 duration-300 relative">
+                              <Label htmlFor="source-user-handle" className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
+                                特定のユーザーのハンドル名
                                 <Badge variant="outline" className="text-[9px] py-0 border-slate-800 text-slate-400 font-mono">必須</Badge>
                               </Label>
-                              <Input
-                                id="source-user-did"
-                                type="text"
-                                value={sourceUserDid}
-                                onChange={(e) => setSourceUserDid(e.target.value)}
-                                placeholder="例: did:plc:z72hi67..."
-                                required={sourceType === "user"}
-                                className="bg-slate-900/60 border-slate-800 text-slate-100 placeholder:text-slate-600 focus-visible:ring-blue-500/50 py-5 rounded-xl"
-                              />
+                              <div className="relative">
+                                <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 text-sm select-none">@</span>
+                                <Input
+                                  id="source-user-handle"
+                                  type="text"
+                                  value={sourceUserHandle}
+                                  onChange={(e) => {
+                                    setSourceUserHandle(e.target.value);
+                                    if (selectedActor && selectedActor.handle !== e.target.value) {
+                                      setSelectedActor(null);
+                                      setSourceUserDid("");
+                                    }
+                                  }}
+                                  placeholder="例: alice.bsky.social"
+                                  required={sourceType === "user"}
+                                  className="bg-slate-900/60 border-slate-800 text-slate-100 placeholder:text-slate-600 focus-visible:ring-blue-500/50 py-5 pl-9 pr-10 rounded-xl w-full"
+                                />
+                                {isLoadingActorSuggestions && (
+                                  <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                                    <RefreshCw className="w-3.5 h-3.5 text-blue-400 animate-spin" />
+                                  </div>
+                                )}
+                              </div>
+
+                              {/* Suggestions Dropdown */}
+                              {actorSuggestions.length > 0 && (
+                                <div className="absolute z-50 left-3 right-0 mt-1 bg-slate-950/95 border border-slate-805 rounded-xl shadow-2xl overflow-hidden max-h-60 overflow-y-auto backdrop-blur-xl">
+                                  {actorSuggestions.map((actor) => (
+                                    <button
+                                      key={actor.did}
+                                      type="button"
+                                      onClick={() => {
+                                        setSourceUserDid(actor.did);
+                                        setSelectedActor(actor);
+                                        setSourceUserHandle(actor.handle);
+                                        setActorSuggestions([]);
+                                      }}
+                                      className="w-full px-4 py-3 text-left hover:bg-slate-900 flex items-center gap-3 transition-colors border-b border-slate-900/60 last:border-0"
+                                    >
+                                      {actor.avatar ? (
+                                        <img src={actor.avatar} alt={actor.handle} className="w-7 h-7 rounded-full bg-slate-850 object-cover" />
+                                      ) : (
+                                        <div className="w-7 h-7 rounded-full bg-slate-800 flex items-center justify-center text-[10px] text-slate-400 font-bold">
+                                          {actor.handle.slice(0, 2).toUpperCase()}
+                                        </div>
+                                      )}
+                                      <div className="min-w-0 flex-1">
+                                        <div className="text-xs font-semibold text-slate-200 truncate leading-none">
+                                          {actor.displayName || actor.handle}
+                                        </div>
+                                        <div className="text-[10px] text-slate-500 truncate mt-0.5 font-mono">
+                                          @{actor.handle}
+                                        </div>
+                                      </div>
+                                    </button>
+                                  ))}
+                                </div>
+                              )}
+
+                              {/* Selected Actor Details Card */}
+                              {selectedActor && (
+                                <div className="mt-2 p-3 bg-blue-950/15 border border-blue-900/30 rounded-xl flex items-center gap-3 animate-in fade-in duration-300">
+                                  {selectedActor.avatar ? (
+                                    <img src={selectedActor.avatar} alt={selectedActor.handle} className="w-9 h-9 rounded-full bg-slate-800 object-cover border border-blue-900/40" />
+                                  ) : (
+                                    <div className="w-9 h-9 rounded-full bg-slate-800 flex items-center justify-center text-xs text-slate-400 font-bold">
+                                      {selectedActor.handle.slice(0, 2).toUpperCase()}
+                                    </div>
+                                  )}
+                                  <div className="min-w-0 flex-1">
+                                    <div className="text-xs font-semibold text-slate-200 truncate">
+                                      {selectedActor.displayName || selectedActor.handle}
+                                    </div>
+                                    <div className="text-[9px] text-slate-400 font-mono mt-0.5">
+                                      {selectedActor.did}
+                                    </div>
+                                  </div>
+                                  <div className="text-[9px] font-bold text-emerald-500 bg-emerald-950/40 border border-emerald-900/50 px-2 py-0.5 rounded-full uppercase tracking-wider font-mono">
+                                    確定
+                                  </div>
+                                </div>
+                              )}
+
+                              <input type="hidden" name="sourceUserDid" value={sourceUserDid} />
                             </div>
                           )}
 
