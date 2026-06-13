@@ -1,14 +1,12 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import {
-  Compass,
   ArrowLeft,
   LogIn,
   Search,
   Settings2,
   Tag,
   Globe,
-  User,
   Pencil,
   Trash2,
   ExternalLink,
@@ -19,8 +17,9 @@ import {
   Sparkles,
   Filter,
   SlidersHorizontal,
-  RefreshCw,
   Info,
+  ShieldCheck,
+  Key,
 } from "lucide-react";
 
 export const metadata: Metadata = {
@@ -143,7 +142,7 @@ export default function HelpPage() {
           <div className="flex items-center gap-3">
             <div className="relative w-8 h-8 rounded-lg overflow-hidden bg-gradient-to-tr from-blue-600 to-blue-400 p-[1px]">
               <div className="w-full h-full bg-[#0f1624] flex items-center justify-center rounded-lg">
-                <Compass className="w-4 h-4 text-blue-400" />
+                <span className="text-blue-400 font-bold text-base leading-none">#</span>
               </div>
             </div>
             <div>
@@ -213,6 +212,34 @@ export default function HelpPage() {
               Bluesky のカスタムフィードをキーワードやタグで簡単に作成・管理できるツールです。
               このガイドでは、ログインからフィードの反映まで順を追って説明します。
             </p>
+
+            {/* API credit */}
+            <div className="mt-6 flex items-start gap-3 p-3 rounded-xl border border-slate-700/60 bg-slate-900/60">
+              <Info className="w-4 h-4 text-slate-400 shrink-0 mt-0.5" />
+              <p className="text-xs text-slate-400 leading-relaxed">
+                本アプリは{" "}
+                <a
+                  href="https://fg.shigepon.net/"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-blue-400 hover:underline"
+                >
+                  fg.shigepon.net
+                </a>{" "}
+                で提供されている{" "}
+                <a
+                  href="https://bsky.app/profile/shigepon.net"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-blue-400 hover:underline"
+                >
+                  @shigepon.net
+                </a>{" "}
+                さんの Bluesky カスタムフィード API サービスを利用しています。
+                しげぽんさんの API が提供するすべての機能を実装しているわけではありません。
+                高度な条件指定や全機能を利用したい場合は、「クエリ直接編集」モードをお使いください。
+              </p>
+            </div>
           </div>
 
           {/* 1. Overview */}
@@ -253,9 +280,12 @@ export default function HelpPage() {
 
             <div className="space-y-3">
               <div className="p-4 rounded-xl border border-blue-900/40 bg-blue-950/20">
-                <p className="text-sm font-semibold text-blue-300 mb-1">
-                  ① @passport でログイン（推奨）
-                </p>
+                <div className="flex items-center gap-2 mb-2">
+                  <ShieldCheck className="w-4 h-4 text-blue-400" />
+                  <p className="text-sm font-semibold text-blue-300">
+                    ① @passport でログイン（推奨）
+                  </p>
+                </div>
                 <p className="text-xs text-slate-400 leading-relaxed">
                   <a
                     href="https://atpassport.net"
@@ -265,30 +295,33 @@ export default function HelpPage() {
                   >
                     @passport
                   </a>{" "}
-                  は AT Protocol 向けの OAuth 認証サービスです。パスワードを直接入力せずにログインできるため、
-                  セキュリティ面で優れています。「@passport でログイン」ボタンをクリックし、
-                  画面の指示に従ってください。
+                  は AT Protocol 向けの OAuth 認証サービスです。パスワードを直接入力しない安全な OAuth ログインです。
+                  「@passport でログイン」ボタンをクリックし、画面の指示に従ってください。
                 </p>
               </div>
 
               <div className="p-4 rounded-xl border border-slate-800/60 bg-slate-900/40">
-                <p className="text-sm font-semibold text-slate-200 mb-1">
-                  ② atproto アカウントでログイン
-                </p>
+                <div className="flex items-center gap-2 mb-2">
+                  <Key className="w-4 h-4 text-slate-400" />
+                  <p className="text-sm font-semibold text-slate-200">
+                    ② atproto アカウントでログイン
+                  </p>
+                </div>
                 <p className="text-xs text-slate-400 leading-relaxed">
                   Bluesky のハンドル名（例:{" "}
                   <code className="font-mono text-slate-300">@example.bsky.social</code>）と
-                  アプリパスワードを入力してログインします。
+                  <strong className="text-slate-300">アプリパスワード</strong>を入力してログインします。
                   ハンドル入力欄の左側に「@」が表示されているので、
                   <code className="font-mono text-slate-300">example.bsky.social</code> のように
                   @ を除いて入力してください。
+                  このログイン方式では OAuth は使用できません。アプリパスワードの利用が必要です。
                 </p>
               </div>
             </div>
 
             <Note type="tip">
               アプリパスワードは Bluesky の設定画面（設定 → プライバシーとセキュリティ → アプリパスワード）から
-              発行できます。通常のログインパスワードは使用しないことを推奨します。
+              発行できます。通常のログインパスワードは入力しないでください。
             </Note>
           </Section>
 
@@ -586,7 +619,7 @@ export default function HelpPage() {
           </Section>
 
           {/* 8. FAQ */}
-          <Section id="faq" icon={RefreshCw} title="よくある質問">
+          <Section id="faq" icon={Info} title="よくある質問">
             <div className="space-y-4">
               {[
                 {
@@ -633,7 +666,7 @@ export default function HelpPage() {
           {/* CTA */}
           <div className="relative overflow-hidden rounded-2xl border border-blue-900/40 bg-blue-950/20 p-8 text-center">
             <div className="absolute -bottom-10 -right-10 w-48 h-48 bg-blue-600/10 rounded-full blur-3xl pointer-events-none" />
-            <Compass className="w-8 h-8 text-blue-400 mx-auto mb-4" />
+            <span className="text-4xl font-black text-blue-400 mx-auto mb-4 block">＃</span>
             <h3 className="text-xl font-bold text-white mb-2">さっそく試してみましょう</h3>
             <p className="text-sm text-slate-400 mb-6">
               ログインして、あなただけの Bluesky カスタムフィードを作成しましょう。
