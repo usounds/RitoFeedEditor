@@ -371,7 +371,7 @@ export default function Home() {
       parts.push("not (labels exists)");
     }
 
-    const filterSection = parts.length > 0 ? `\nfilter {\n  ${parts.join("\n  and ")}\n}` : "";
+    const filterSection = parts.length > 0 ? ` filter { ${parts.join(" and ")} }` : "";
 
     let sourceStr = "all(newest)";
     if (sourceType === "me") {
@@ -380,7 +380,7 @@ export default function Home() {
       sourceStr = `postedBy(${JSON.stringify(sourceUserDid.trim())}, newest)`;
     }
 
-    return `source {\n  ${sourceStr}\n}${filterSection}`;
+    return `source { ${sourceStr} }${filterSection}`;
   }, [
     includeRawWords,
     includeRawInput,
@@ -1114,7 +1114,7 @@ export default function Home() {
         body: JSON.stringify({
           type: feedType,
           rkey: rkey.trim(),
-          condition: finalCondition.replace(/\n\s*/g, " ").trim(),
+          condition: finalCondition,
         }),
       });
 
