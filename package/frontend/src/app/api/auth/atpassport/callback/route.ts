@@ -14,8 +14,14 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Missing handle parameter" }, { status: 400 });
   }
 
-  // クライアントのベースURLをリクエストヘッダーから動的に取得（ローカル・本番両対応）
-  const origin = request.nextUrl.origin;
+  // クライアントのベースURLを環境変数またはリクエストヘッダーから動的に取得（プロキシ対応）
+  const forwardedHost = request.headers.get("x-forwarded-host");
+  const forwardedProto = request.headers.get("x-forwarded-proto") || "https";
+  const origin = process.env.NEXT_PUBLIC_APP_URL 
+    ? process.env.NEXT_PUBLIC_APP_URL.replace(/\/$/, "")
+    : forwardedHost 
+      ? `${forwardedProto}://${forwardedHost}` 
+      : request.nextUrl.origin;
 
   // APIサーバーのOAuth開始エンドポイントへリダイレクト
   // 認証完了後に元のトップページ（origin/）に戻るように redirect パラメータを指定
