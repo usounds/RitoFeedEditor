@@ -2151,7 +2151,7 @@ export default function Home() {
                             {/* Labels Filter */}
                             <div className="space-y-2">
                               <Label htmlFor="labels-filter" className="text-xs font-semibold text-slate-300">
-                                ラベル（セルフラベルなど）付き投稿の扱い
+                                セルフラベル付き投稿の扱い
                               </Label>
                               <select
                                 id="labels-filter"
@@ -2161,8 +2161,8 @@ export default function Home() {
                                 className="w-full bg-slate-900/60 border border-slate-800 rounded-xl px-3 py-2.5 text-xs text-slate-100 focus:outline-none focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/20"
                               >
                                 <option value="all">すべて含める</option>
-                                <option value="only">ラベル付きのみにする</option>
-                                <option value="exclude">ラベル付きを除外する</option>
+                                <option value="only">セルフラベル付きのみにする</option>
+                                <option value="exclude">セルフラベル付きを除外する</option>
                               </select>
                             </div>
                           </div>
@@ -2317,29 +2317,7 @@ export default function Home() {
                             </div>
                           </div>
 
-                          {/* Feed Type */}
-                          <div className="space-y-2">
-                            <Label className="text-xs font-semibold text-slate-300">
-                              フィードタイプ
-                            </Label>
-                            <div className="flex gap-2">
-                              <button
-                                type="button"
-                                onClick={() => setFeedType("Search")}
-                                className="flex-1 py-2.5 rounded-xl border text-xs font-medium transition-all bg-blue-950/40 border-blue-800/80 text-blue-400 shadow-[0_0_15px_rgba(34,139,230,0.1)]"
-                              >
-                                検索型 (Search)
-                              </button>
-                              <button
-                                type="button"
-                                disabled
-                                className="flex-1 py-2.5 rounded-xl border border-slate-900 bg-slate-950/40 text-slate-600 text-xs font-medium opacity-50 cursor-not-allowed"
-                                title="現在開発中につき選択できません"
-                              >
-                                フィルター型 (Filter) [開発中]
-                              </button>
-                            </div>
-                          </div>
+
                         </div>
                       )}
                     </>
