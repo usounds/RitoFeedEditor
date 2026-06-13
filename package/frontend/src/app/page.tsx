@@ -1114,7 +1114,7 @@ export default function Home() {
         body: JSON.stringify({
           type: feedType,
           rkey: rkey.trim(),
-          condition: finalCondition,
+          condition: finalCondition.replace(/\n\s*/g, " ").trim(),
         }),
       });
 
