@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import Image from "next/image";
+import Link from "next/link";
 import { toast } from "sonner";
 import { AtPassportIcon, AtPassportUI } from "@atpassport/client/ui";
 import { 
@@ -1076,6 +1077,15 @@ export default function Home() {
           </div>
 
           <div className="flex items-center gap-2">
+            {/* Help link */}
+            <Link
+              href="/help"
+              className="inline-flex items-center justify-center w-8 h-8 rounded-lg text-slate-400 hover:text-slate-100 hover:bg-slate-900/50 transition-colors"
+              title="使い方"
+            >
+              <BookOpen className="w-4 h-4" />
+            </Link>
+
             {/* Settings Dialog */}
             <Dialog open={isSettingsOpen} onOpenChange={setIsSettingsOpen}>
               <DialogTrigger render={
@@ -2029,8 +2039,14 @@ export default function Home() {
           <p>© usounds.work</p>
           <div className="flex items-center gap-4">
             <span>API: {apiBaseUrl}</span>
+            <Link
+              href="/help"
+              className="hover:text-slate-300"
+            >
+              使い方
+            </Link>
             <a 
-              href="https://github.com/usounds/atpassport" 
+              href="https://github.com/usounds/RitoFeedEditor" 
               target="_blank" 
               rel="noopener noreferrer"
               className="hover:text-slate-300"
