@@ -309,19 +309,17 @@ export default function HelpPage() {
                 </div>
                 <p className="text-xs text-slate-400 leading-relaxed">
                   Bluesky のハンドル名（例:{" "}
-                  <code className="font-mono text-slate-300">@example.bsky.social</code>）と
-                  <strong className="text-slate-300">アプリパスワード</strong>を入力してログインします。
+                  <code className="font-mono text-slate-300">@example.bsky.social</code>）を入力してログインします。
                   ハンドル入力欄の左側に「@」が表示されているので、
                   <code className="font-mono text-slate-300">example.bsky.social</code> のように
-                  @ を除いて入力してください。
-                  このログイン方式では OAuth は使用できません。アプリパスワードの利用が必要です。
+                  @ を除いて入力し、「ログイン」を押すと Bluesky の OAuth 認証画面に移動します。
+                  アプリパスワードは使用できません。
                 </p>
               </div>
             </div>
 
-            <Note type="tip">
-              アプリパスワードは Bluesky の設定画面（設定 → プライバシーとセキュリティ → アプリパスワード）から
-              発行できます。通常のログインパスワードは入力しないでください。
+            <Note type="info">
+              どちらのログイン方法も OAuth 認証を使用しています。パスワードを直接このサービスに入力することはありません。
             </Note>
           </Section>
 
