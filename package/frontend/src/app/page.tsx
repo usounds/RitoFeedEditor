@@ -2079,7 +2079,7 @@ export default function Home() {
                             {/* Reply Filter */}
                             <div className="space-y-2">
                               <Label htmlFor="reply-filter" className="text-xs font-semibold text-slate-300">
-                                返信（リプライ）の扱い
+                                返信の扱い
                               </Label>
                               <select
                                 id="reply-filter"
@@ -2133,7 +2133,7 @@ export default function Home() {
                             {/* External Link Filter */}
                             <div className="space-y-2">
                               <Label htmlFor="external-filter" className="text-xs font-semibold text-slate-300">
-                                リンク（カード）付き投稿の扱い
+                                リンクカード付き投稿の扱い
                               </Label>
                               <select
                                 id="external-filter"
@@ -2143,8 +2143,8 @@ export default function Home() {
                                 className="w-full bg-slate-900/60 border border-slate-800 rounded-xl px-3 py-2.5 text-xs text-slate-100 focus:outline-none focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/20"
                               >
                                 <option value="all">すべて含める</option>
-                                <option value="only">リンク付きのみにする</option>
-                                <option value="exclude">リンク付きを除外する</option>
+                                <option value="only">リンクカード付きのみにする</option>
+                                <option value="exclude">リンクカード付きを除外する</option>
                               </select>
                             </div>
 
