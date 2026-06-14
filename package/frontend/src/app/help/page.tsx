@@ -209,7 +209,7 @@ export default function HelpPage() {
               Rito Feed Editor の使い方
             </h1>
             <p className="text-slate-400 text-sm leading-relaxed max-w-xl">
-              Bluesky のカスタムフィードをキーワードやタグで簡単に作成・管理できるツールです。
+              Bluesky のカスタムフィードをキーワードやハッシュタグで簡単に作成・管理できるツールです。
               このガイドでは、ログインからフィードの反映まで順を追って説明します。
             </p>
 
@@ -252,12 +252,12 @@ export default function HelpPage() {
             </p>
             <p className="text-sm text-slate-400 leading-relaxed">
               通常、カスタムフィードを作成するにはクエリ言語の知識が必要ですが、Rito Feed Editor を使えば
-              キーワードやタグを入力するだけで、フィードを自動的に構成して Bluesky に反映できます。
+              キーワードやハッシュタグを入力するだけで、フィードを自動的に構成して Bluesky に反映できます。
             </p>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2">
               {[
                 { icon: Search, label: "キーワード検索", desc: "含める/除外する単語を指定" },
-                { icon: Tag, label: "タグ絞り込み", desc: "ハッシュタグで投稿を絞り込み" },
+                { icon: Tag, label: "ハッシュタグ絞り込み", desc: "ハッシュタグで投稿を絞り込み" },
                 { icon: Filter, label: "フォームorクエリ", desc: "GUI入力と直接編集を切替可能" },
               ].map((f) => (
                 <div
@@ -335,7 +335,7 @@ export default function HelpPage() {
               <Step number={1} title="ステップ 1：検索条件を設定する">
                 <p>
                   フィードに表示したい投稿の絞り込み条件を入力します。
-                  「含める単語」「タグ」「除外する単語」「取得元（ソース）」を設定できます。
+                  「形態素」「テキスト」「ハッシュタグ」「除外する単語」「取得元（ソース）」を設定できます。
                 </p>
                 <p className="pt-1">
                   設定が終わったら「次へ進む」をクリックしてステップ 2 へ進みます。
@@ -352,7 +352,7 @@ export default function HelpPage() {
             </div>
 
             <Note type="warning">
-              「含める単語（部分一致）」「含める単語（単語一致）」「タグ」のいずれか 1 つ以上の入力が必須です。
+              「形態素」「テキスト」「ハッシュタグ」のいずれか 1 つ以上の入力が必須です。
               何も入力しないままステップ 2 に進もうとするとエラーが表示されます。
             </Note>
           </Section>
@@ -399,22 +399,27 @@ export default function HelpPage() {
                   </span>
                 </div>
                 <p className="text-xs text-slate-400 leading-relaxed">
-                  2 種類の検索方式があります。
+                  3 種類の入力があります。上から順に試すと、使い分けしやすくなります。
                 </p>
                 <ul className="text-xs text-slate-400 space-y-2 list-none">
                   <li>
-                    <span className="font-semibold text-slate-300">部分一致 / 生テキスト</span>
-                    　—　投稿本文に入力した文字列が含まれているかを検索します。
+                    <span className="font-semibold text-slate-300">形態素</span>
+                    　—　単語一致で検索します。カタカナのみ、漢字のみの単語におすすめです。
+                    例えば「猫」と入力すると「猫」という単語として使われている投稿を検索します（「猫耳」などは対象外になります）。
+                  </li>
+                  <li>
+                    <span className="font-semibold text-slate-300">テキスト</span>
+                    　—　部分一致で検索します。ひらがなを含む場合におすすめです。
                     例えば「けいおん」と入力すると「けいおん」を含む投稿が対象になります。
                   </li>
                   <li>
-                    <span className="font-semibold text-slate-300">単語一致 / 形態素</span>
-                    　—　形態素解析した単語が完全一致するかを検索します。
-                    例えば「猫」と入力すると「猫」という単語として使われている投稿を検索します（「猫耳」などは対象外になります）。
+                    <span className="font-semibold text-slate-300">ハッシュタグ</span>
+                    　—　投稿に付けられたタグで絞り込みます。
+                    例えば「イラスト」と入力すると、#イラスト を含む投稿が対象になります。
                   </li>
                 </ul>
                 <p className="text-xs text-slate-500 mt-2">
-                  右側の「いずれか含む (OR)」「すべて含む (AND)」ボタンで複数単語の組み合わせ方を変更できます。
+                  各カードは 3 項目を OR でまとめ、カード同士は AND でつながります。
                 </p>
               </div>
 
@@ -422,7 +427,7 @@ export default function HelpPage() {
               <div className="p-4 rounded-xl border border-slate-800/60 bg-slate-900/40 space-y-2">
                 <div className="flex items-center gap-2">
                   <Tag className="w-4 h-4 text-violet-400" />
-                  <p className="text-sm font-semibold text-slate-200">タグ</p>
+                  <p className="text-sm font-semibold text-slate-200">ハッシュタグ</p>
                   <span className="text-[10px] font-mono text-amber-500 border border-amber-900/60 px-1 rounded">
                     いずれか必須
                   </span>
@@ -597,7 +602,7 @@ export default function HelpPage() {
                 },
                 {
                   q: "「次へ進む」を押してもステップ 2 に進まない？",
-                  a: "「含める単語（部分一致）」「含める単語（単語一致）」「タグ」のいずれか 1 つ以上の入力が必要です。いずれも空の場合はエラートーストが表示されます。",
+                  a: "「形態素」「テキスト」「ハッシュタグ」のいずれか 1 つ以上の入力が必要です。いずれも空の場合はエラートーストが表示されます。",
                 },
                 {
                   q: "日本語を入力するとタグが 2 個登録される？",

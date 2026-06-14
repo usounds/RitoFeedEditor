@@ -14,7 +14,6 @@ import {
   RefreshCw, 
   Sliders, 
   Globe, 
-  Tags, 
   Eye, 
   BookOpen,
   Info,
@@ -113,7 +112,99 @@ interface UserSession {
   did: string;
 }
 
+interface IncludeGroup {
+  id: string;
+  rawWords: string[];
+  rawInput: string;
+  tags: string[];
+  tagsInput: string;
+  wordWords: string[];
+  wordInput: string;
+}
+
 const DEFAULT_API_BASE = "https://fg.shigepon.net";
+
+const createIncludeGroup = (params: Partial<Pick<IncludeGroup, "rawWords" | "rawInput" | "tags" | "tagsInput" | "wordWords" | "wordInput">> = {}): IncludeGroup => ({
+  id: `word-group-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+  rawWords: params.rawWords ?? [],
+  rawInput: params.rawInput ?? "",
+  tags: params.tags ?? [],
+  tagsInput: params.tagsInput ?? "",
+  wordWords: params.wordWords ?? [],
+  wordInput: params.wordInput ?? "",
+});
+
+const parseDelimitedWords = (value: string) =>
+  value
+    .split(/[,\s\u3001]+/)
+    .map((word) => word.trim())
+    .filter(Boolean);
+
+const parseQuotedList = (argsStr: string) =>
+  argsStr
+    .split(/\s*,\s*/)
+    .map((word) => {
+      const match = word.match(/^["'](.*?)["']$/);
+      return match ? match[1] : word;
+    })
+    .filter(Boolean);
+
+const hasIncludeGroupContent = (group: IncludeGroup) =>
+  group.rawWords.length > 0 ||
+  group.rawInput.trim().length > 0 ||
+  group.tags.length > 0 ||
+  group.tagsInput.trim().length > 0 ||
+  group.wordWords.length > 0 ||
+  group.wordInput.trim().length > 0;
+
+const parseIncludeGroupClause = (clause: string): { group: IncludeGroup; expandToAlt: boolean } | null => {
+  const normalized = clause.trim();
+  if (!normalized) return null;
+
+  if (/\b(from|isreply|hasimage|hasvideo|hasexternal|haslabel)\s*\(/.test(normalized)) {
+    return null;
+  }
+  if (/!/.test(normalized)) {
+    return null;
+  }
+
+  const rawMatches = [...normalized.matchAll(/\bchars\(([^)]*)\)/g)].flatMap((match) => parseQuotedList(match[1].trim()));
+  const tagMatches = [...normalized.matchAll(/\btag\(([^)]*)\)/g)].flatMap((match) =>
+    parseQuotedList(match[1].trim()).map((tag) => tag.replace(/^#/, "").trim()).filter(Boolean),
+  );
+  const wordMatches = [...normalized.matchAll(/\bword\(([^)]*)\)/g)].flatMap((match) => parseQuotedList(match[1].trim()));
+  const hasImage = /\bimage\(/.test(normalized);
+  const hasVideo = /\bvideo\(/.test(normalized);
+
+  const remainder = normalized.replace(/\b(?:chars|tag|word|image|video)\(([^)]*)\)/g, "");
+  if (/[^\s|()]/.test(remainder)) {
+    return null;
+  }
+
+  if ((hasImage || hasVideo) && rawMatches.length === 0 && wordMatches.length === 0) {
+    return null;
+  }
+
+  const group = createIncludeGroup();
+  if (rawMatches.length > 0) {
+    group.rawWords = [...new Set(rawMatches.map((word) => word.trim()).filter(Boolean))];
+  }
+  if (tagMatches.length > 0) {
+    group.tags = [...new Set(tagMatches.map((tag) => tag.trim()).filter(Boolean))];
+  }
+  if (wordMatches.length > 0) {
+    group.wordWords = [...new Set(wordMatches.map((word) => word.trim()).filter(Boolean))];
+  }
+
+  if (!hasIncludeGroupContent(group)) {
+    return null;
+  }
+
+  return {
+    group,
+    expandToAlt: hasImage || hasVideo,
+  };
+};
 
 export default function Home() {
   // Client mount state (prevents hydration mismatch)
@@ -156,19 +247,11 @@ export default function Home() {
   const [existingAvatarCid, setExistingAvatarCid] = useState<string | null>(null);
   const [feedType, setFeedType] = useState<"Search" | "Filter">("Filter");
   const [expandToAlt, setExpandToAlt] = useState(false);
-  const [includeRawWords, setIncludeRawWords] = useState<string[]>([]);
-  const [includeRawInput, setIncludeRawInput] = useState("");
-  const [includeRawMode, setIncludeRawMode] = useState<"OR" | "AND">("OR");
-  const [includeWords, setIncludeWords] = useState<string[]>([]);
-  const [includeInput, setIncludeInput] = useState("");
-  const [includeMode, setIncludeMode] = useState<"OR" | "AND">("OR");
+  const [includeGroups, setIncludeGroups] = useState<IncludeGroup[]>([createIncludeGroup()]);
   const [excludeRawWords, setExcludeRawWords] = useState<string[]>([]);
   const [excludeRawInput, setExcludeRawInput] = useState("");
   const [excludeWords, setExcludeWords] = useState<string[]>([]);
   const [excludeInput, setExcludeInput] = useState("");
-  const [tags, setTags] = useState<string[]>([]);
-  const [tagsInput, setTagsInput] = useState("");
-  const [tagsMode, setTagsMode] = useState<"OR" | "AND">("OR");
   const [langs, setLangs] = useState("");
   const [replyFilter, setReplyFilter] = useState<"all" | "only" | "exclude">("all");
   const [imagesFilter, setImagesFilter] = useState<"all" | "only" | "exclude">("all");
@@ -302,6 +385,21 @@ export default function Home() {
     setActorSuggestions([]);
   };
 
+  const updateIncludeGroup = (groupId: string, patch: Partial<IncludeGroup>) => {
+    setIncludeGroups((prev) => prev.map((group) => (group.id === groupId ? { ...group, ...patch } : group)));
+  };
+
+  const addIncludeGroup = () => {
+    setIncludeGroups((prev) => [...prev, createIncludeGroup()]);
+  };
+
+  const removeIncludeGroup = (groupId: string) => {
+    setIncludeGroups((prev) => {
+      if (prev.length <= 1) return [createIncludeGroup()];
+      return prev.filter((group) => group.id !== groupId);
+    });
+  };
+
   // Set mount state and load configuration from local storage
   useEffect(() => {
     setMounted(true);
@@ -350,60 +448,36 @@ export default function Home() {
     }
     */
 
-    // 2-1. Include Raw words (chars)
-    const finalRawIncludes = [...includeRawWords];
-    if (includeRawInput.trim()) {
-      const pending = includeRawInput.split(/[,\s\u3001]+/).map(w => w.trim()).filter(Boolean);
-      pending.forEach(p => {
-        if (!finalRawIncludes.includes(p)) finalRawIncludes.push(p);
-      });
-    }
-    if (finalRawIncludes.length > 0) {
-      if (includeRawMode === "OR") {
-        const terms = finalRawIncludes.join(", ");
-        if (expandToAlt) {
-          keywordParts.push(`(chars(${terms}) || image(${terms}) || video(${terms}))`);
-        } else {
-          keywordParts.push(`chars(${terms})`);
-        }
-      } else {
-        finalRawIncludes.forEach(w => {
-          const term = w;
-          if (expandToAlt) {
-            keywordParts.push(`(chars(${term}) || image(${term}) || video(${term}))`);
-          } else {
-            keywordParts.push(`chars(${term})`);
-          }
-        });
-      }
-    }
+    // 2. Include groups: each card contains raw / tag / word inputs, combined by OR.
+    const finalIncludeGroups = includeGroups
+      .map((group) => {
+        const rawWords = [...new Set([...group.rawWords, ...parseDelimitedWords(group.rawInput)].map((w) => w.trim()).filter(Boolean))];
+        const tagsWords = [...new Set([
+          ...group.tags,
+          ...parseDelimitedWords(group.tagsInput).map((tag) => tag.replace(/^#/, "").trim()).filter(Boolean),
+        ])];
+        const wordWords = [...new Set([...group.wordWords, ...parseDelimitedWords(group.wordInput)].map((w) => w.trim()).filter(Boolean))];
+        const groupParts: string[] = [];
 
-    // 2-2. Include Word-match words (word)
-    const finalIncludes = [...includeWords];
-    if (includeInput.trim()) {
-      const pending = includeInput.split(/[,\s\u3001]+/).map(w => w.trim()).filter(Boolean);
-      pending.forEach(p => {
-        if (!finalIncludes.includes(p)) finalIncludes.push(p);
-      });
-    }
-    if (finalIncludes.length > 0) {
-      if (includeMode === "OR") {
-        const terms = finalIncludes.join(", ");
-        if (expandToAlt) {
-          keywordParts.push(`(word(${terms}) || image(${terms}) || video(${terms}))`);
-        } else {
-          keywordParts.push(`word(${terms})`);
+        if (rawWords.length > 0) {
+          const terms = rawWords.join(", ");
+          groupParts.push(expandToAlt ? `(chars(${terms}) || image(${terms}) || video(${terms}))` : `chars(${terms})`);
         }
-      } else {
-        finalIncludes.forEach(w => {
-          const term = w;
-          if (expandToAlt) {
-            keywordParts.push(`(word(${term}) || image(${term}) || video(${term}))`);
-          } else {
-            keywordParts.push(`word(${term})`);
-          }
-        });
-      }
+        if (tagsWords.length > 0) {
+          groupParts.push(`tag(${tagsWords.join(", ")})`);
+        }
+        if (wordWords.length > 0) {
+          const terms = wordWords.join(", ");
+          groupParts.push(expandToAlt ? `(word(${terms}) || image(${terms}) || video(${terms}))` : `word(${terms})`);
+        }
+
+        if (groupParts.length === 0) return "";
+        return `(${groupParts.join(" || ")})`;
+      })
+      .filter(Boolean);
+
+    if (finalIncludeGroups.length > 0) {
+      keywordParts.push(`(${finalIncludeGroups.join(" && ")})`);
     }
 
     // 3-1. Exclude Raw words (!chars)
@@ -442,38 +516,10 @@ export default function Home() {
       }
     }
 
-    // 4. Tags
-    let tagCondition = "";
-    const finalTags = [...tags];
-    if (tagsInput.trim()) {
-      const pending = tagsInput.split(/[,\s\u3001]+/).map(t => t.trim()).filter(Boolean);
-      pending.forEach(p => {
-        if (!finalTags.includes(p)) finalTags.push(p);
-      });
-    }
-    if (finalTags.length > 0) {
-      tagCondition = `tag(${finalTags.map(t => {
-        const cleanTag = t.startsWith("#") ? t.slice(1) : t;
-        return cleanTag;
-      }).join(", ")})`;
-    }
-
-    // Combine keyword conditions and tags
+    // 4. Combine keyword conditions
     const combinedParts: string[] = [];
-    const hasKeywords = keywordParts.length > 0;
-    const hasTags = tagCondition !== "";
-
-    if (hasKeywords && hasTags) {
-      const joinedKeywords = keywordParts.length > 1 ? `(${keywordParts.join(" && ")})` : keywordParts[0];
-      if (tagsMode === "OR") {
-        combinedParts.push(`(${joinedKeywords} || ${tagCondition})`);
-      } else {
-        combinedParts.push(`(${joinedKeywords} && ${tagCondition})`);
-      }
-    } else if (hasKeywords) {
-      combinedParts.push(...keywordParts);
-    } else if (hasTags) {
-      combinedParts.push(tagCondition);
+    if (keywordParts.length > 0) {
+      combinedParts.push(keywordParts.length > 1 ? `(${keywordParts.join(" && ")})` : keywordParts[0]);
     }
 
     // 5. Reply
@@ -513,19 +559,11 @@ export default function Home() {
 
     return combinedParts.join(" && ");
   }, [
-    includeRawWords,
-    includeRawInput,
-    includeRawMode,
-    includeWords,
-    includeInput,
-    includeMode,
+    includeGroups,
     excludeRawWords,
     excludeRawInput,
     excludeWords,
     excludeInput,
-    tags,
-    tagsInput,
-    tagsMode,
     replyFilter,
     imagesFilter,
     videoFilter,
@@ -726,18 +764,11 @@ export default function Home() {
     setAvatarPreview(null);
     setExistingAvatarCid(null);
 
-    setIncludeRawWords([]);
-    setIncludeRawInput("");
-    setIncludeRawMode("OR");
-    setIncludeWords([]);
-    setIncludeInput("");
+    setIncludeGroups([createIncludeGroup()]);
     setExcludeRawWords([]);
     setExcludeRawInput("");
     setExcludeWords([]);
     setExcludeInput("");
-    setTags([]);
-    setTagsInput("");
-    setTagsMode("OR");
     setLangs("");
     setReplyFilter("all");
     setImagesFilter("all");
@@ -760,19 +791,11 @@ export default function Home() {
   const parseQueryToForm = (query: string) => {
     try {
       // Reset builder form states
-      setIncludeRawWords([]);
-      setIncludeRawInput("");
-      setIncludeRawMode("OR");
-      setIncludeWords([]);
-      setIncludeInput("");
-      setIncludeMode("OR");
+      setIncludeGroups([createIncludeGroup()]);
       setExcludeRawWords([]);
       setExcludeRawInput("");
       setExcludeWords([]);
       setExcludeInput("");
-      setTags([]);
-      setTagsInput("");
-      setTagsMode("OR");
       setLangs(""); // Not supported, reset
       setReplyFilter("all");
       setImagesFilter("all");
@@ -788,57 +811,10 @@ export default function Home() {
       setStep(1);
       setIsAdvanced(false);
       setRawCondition(query);
+      const parsedIncludeGroups: IncludeGroup[] = [];
 
       let normalizedQuery = query.trim();
       if (!normalizedQuery) return;
-
-      // Tag Pre-parsing & Stripping
-      const tagRegex = /tag\(([^)]*)\)/;
-      const tagMatch = normalizedQuery.match(tagRegex);
-      if (tagMatch) {
-        const argsStr = tagMatch[1].trim();
-        const parsedTags = argsStr.split(/\s*,\s*/).map(w => {
-          const m = w.match(/^["'](.*?)["']$/);
-          return m ? m[1] : w;
-        }).filter(Boolean);
-        if (parsedTags.length > 0) {
-          setTags(parsedTags);
-        }
-
-        const hasOrJoin = normalizedQuery.includes("|| tag(");
-        const hasAndJoin = normalizedQuery.includes("&& tag(");
-
-        if (hasOrJoin) {
-          setTagsMode("OR");
-          const groupRegexOr = /\(\s*(.*?)\s*\|\|\s*tag\([^)]*\)\s*\)/;
-          const groupMatch = normalizedQuery.match(groupRegexOr);
-          if (groupMatch) {
-            normalizedQuery = normalizedQuery.replace(groupMatch[0], groupMatch[1]);
-          } else {
-            normalizedQuery = normalizedQuery.replace(/\|\|\s*tag\([^)]*\)/, "");
-          }
-        } else if (hasAndJoin) {
-          setTagsMode("AND");
-          const groupRegexAnd = /\(\s*(.*?)\s*&&\s*tag\([^)]*\)\s*\)/;
-          const groupMatch = normalizedQuery.match(groupRegexAnd);
-          if (groupMatch) {
-            normalizedQuery = normalizedQuery.replace(groupMatch[0], groupMatch[1]);
-          } else {
-            normalizedQuery = normalizedQuery.replace(/&&\s*tag\([^)]*\)/, "");
-          }
-        } else {
-          // Flat tag(...) clause or no combined group.
-          const hasKeywordsInQuery = /chars\(|word\(/.test(normalizedQuery);
-          if (hasKeywordsInQuery) {
-            setTagsMode("AND");
-          } else {
-            setTagsMode("OR");
-          }
-          normalizedQuery = normalizedQuery.replace(/&&\s*tag\([^)]*\)/, "");
-          normalizedQuery = normalizedQuery.replace(/tag\([^)]*\)\s*&&/, "");
-          normalizedQuery = normalizedQuery.replace(/tag\([^)]*\)/, "");
-        }
-      }
 
       // Split by '&&'
       const clauses = normalizedQuery.split(/\s*&&\s*/);
@@ -849,48 +825,11 @@ export default function Home() {
         if (!trimmedClause) continue;
 
         // Check for ALT expansion clauses first
-        const expandCharsMatch = trimmedClause.match(/^\(?\s*chars\(([^)]*)\)\s*\|\|\s*image\(([^)]*)\)\s*\|\|\s*video\(([^)]*)\)\s*\)?$/);
-        if (expandCharsMatch) {
-          setExpandToAlt(true);
-          const argsStr = expandCharsMatch[1].trim();
-          const words = argsStr.split(/\s*,\s*/).map(w => {
-            const m = w.match(/^["'](.*?)["']$/);
-            return m ? m[1] : w;
-          }).filter(Boolean);
-          if (words.length > 0) {
-            setIncludeRawWords(prev => [...new Set([...prev, ...words])]);
-            if (words.length > 1) {
-              setIncludeRawMode("OR");
-            }
-          }
-          continue;
-        }
-
-        const expandWordMatch = trimmedClause.match(/^\(?\s*word\(([^)]*)\)\s*\|\|\s*image\(([^)]*)\)\s*\|\|\s*video\(([^)]*)\)\s*\)?$/);
-        if (expandWordMatch) {
-          setExpandToAlt(true);
-          const argsStr = expandWordMatch[1].trim();
-          const words = argsStr.split(/\s*,\s*/).map(w => {
-            const m = w.match(/^["'](.*?)["']$/);
-            return m ? m[1] : w;
-          }).filter(Boolean);
-          if (words.length > 0) {
-            setIncludeWords(prev => [...new Set([...prev, ...words])]);
-            if (words.length > 1) {
-              setIncludeMode("OR");
-            }
-          }
-          continue;
-        }
-
         const expandNotCharsMatch = trimmedClause.match(/^!(?:\(\s*)?chars\(([^)]*)\)\s*\|\|\s*image\(([^)]*)\)\s*\|\|\s*video\(([^)]*)\)(?:\s*\))?$/);
         if (expandNotCharsMatch) {
           setExpandToAlt(true);
           const argsStr = expandNotCharsMatch[1].trim();
-          const words = argsStr.split(/\s*,\s*/).map(w => {
-            const m = w.match(/^["'](.*?)["']$/);
-            return m ? m[1] : w;
-          }).filter(Boolean);
+          const words = parseQuotedList(argsStr);
           if (words.length > 0) {
             setExcludeRawWords(prev => [...new Set([...prev, ...words])]);
           }
@@ -901,21 +840,11 @@ export default function Home() {
         if (expandNotWordMatch) {
           setExpandToAlt(true);
           const argsStr = expandNotWordMatch[1].trim();
-          const words = argsStr.split(/\s*,\s*/).map(w => {
-            const m = w.match(/^["'](.*?)["']$/);
-            return m ? m[1] : w;
-          }).filter(Boolean);
+          const words = parseQuotedList(argsStr);
           if (words.length > 0) {
             setExcludeWords(prev => [...new Set([...prev, ...words])]);
           }
           continue;
-        }
-
-        // If clause contains '||' but did not match any of the ALT expansion patterns above,
-        // it cannot be parsed by the simple form builder.
-        if (trimmedClause.includes("||")) {
-          isParsable = false;
-          break;
         }
 
         // 1. Source: from($me) or from([did:plc:...])
@@ -945,48 +874,11 @@ export default function Home() {
           continue;
         }
 
-        // 2-1. Include Raw words: chars(...)
-        const charsMatch = trimmedClause.match(/^chars\(([^)]*)\)$/);
-        if (charsMatch) {
-          const argsStr = charsMatch[1].trim();
-          const words = argsStr.split(/\s*,\s*/).map(w => {
-            const m = w.match(/^["'](.*?)["']$/);
-            return m ? m[1] : w;
-          }).filter(Boolean);
-          if (words.length > 0) {
-            setIncludeRawWords(prev => [...new Set([...prev, ...words])]);
-            if (words.length > 1) {
-              setIncludeRawMode("OR");
-            }
-          }
-          continue;
-        }
-
-        // 2-2. Include Word-match words: word(...)
-        const wordMatch = trimmedClause.match(/^word\(([^)]*)\)$/);
-        if (wordMatch) {
-          const argsStr = wordMatch[1].trim();
-          const words = argsStr.split(/\s*,\s*/).map(w => {
-            const m = w.match(/^["'](.*?)["']$/);
-            return m ? m[1] : w;
-          }).filter(Boolean);
-          if (words.length > 0) {
-            setIncludeWords(prev => [...new Set([...prev, ...words])]);
-            if (words.length > 1) {
-              setIncludeMode("OR");
-            }
-          }
-          continue;
-        }
-
         // 3-1. Exclude Raw words: !chars(...)
         const notCharsMatch = trimmedClause.match(/^!chars\(([^)]*)\)$/);
         if (notCharsMatch) {
           const argsStr = notCharsMatch[1].trim();
-          const words = argsStr.split(/\s*,\s*/).map(w => {
-            const m = w.match(/^["'](.*?)["']$/);
-            return m ? m[1] : w;
-          }).filter(Boolean);
+          const words = parseQuotedList(argsStr);
           if (words.length > 0) {
             setExcludeRawWords(prev => [...new Set([...prev, ...words])]);
           }
@@ -997,31 +889,23 @@ export default function Home() {
         const notWordMatch = trimmedClause.match(/^!word\(([^)]*)\)$/);
         if (notWordMatch) {
           const argsStr = notWordMatch[1].trim();
-          const words = argsStr.split(/\s*,\s*/).map(w => {
-            const m = w.match(/^["'](.*?)["']$/);
-            return m ? m[1] : w;
-          }).filter(Boolean);
+          const words = parseQuotedList(argsStr);
           if (words.length > 0) {
             setExcludeWords(prev => [...new Set([...prev, ...words])]);
           }
           continue;
         }
 
-        // 4. Tags: tag(...) - now stripped and handled in pre-parsing stage, but left here for redundant safety.
-        const tagMatch = trimmedClause.match(/^tag\(([^)]*)\)$/);
-        if (tagMatch) {
-          const argsStr = tagMatch[1].trim();
-          const parsedTags = argsStr.split(/\s*,\s*/).map(w => {
-            const m = w.match(/^["'](.*?)["']$/);
-            return m ? m[1] : w;
-          }).filter(Boolean);
-          if (parsedTags.length > 0) {
-            setTags(prev => [...new Set([...prev, ...parsedTags])]);
+        const parsedIncludeGroup = parseIncludeGroupClause(trimmedClause);
+        if (parsedIncludeGroup) {
+          if (parsedIncludeGroup.expandToAlt) {
+            setExpandToAlt(true);
           }
+          parsedIncludeGroups.push(parsedIncludeGroup.group);
           continue;
         }
 
-        // 5. Reply
+        // 4. Reply
         if (trimmedClause === "isreply()") {
           setReplyFilter("only");
           continue;
@@ -1031,7 +915,7 @@ export default function Home() {
           continue;
         }
 
-        // 6. Images
+        // 5. Images
         if (trimmedClause === "hasimage()") {
           setImagesFilter("only");
           continue;
@@ -1041,7 +925,7 @@ export default function Home() {
           continue;
         }
 
-        // 7. Video
+        // 6. Video
         if (trimmedClause === "hasvideo()") {
           setVideoFilter("only");
           continue;
@@ -1051,7 +935,7 @@ export default function Home() {
           continue;
         }
 
-        // 8. External
+        // 7. External
         if (trimmedClause === "hasexternal()") {
           setExternalFilter("only");
           continue;
@@ -1061,7 +945,7 @@ export default function Home() {
           continue;
         }
 
-        // 9. Labels
+        // 8. Labels
         if (trimmedClause === "haslabel()") {
           setLabelsFilter("only");
           continue;
@@ -1078,7 +962,12 @@ export default function Home() {
 
       if (!isParsable) {
         setIsAdvanced(true);
+        return;
       }
+
+      setIncludeGroups(parsedIncludeGroups.length > 0 ? parsedIncludeGroups : [createIncludeGroup()]);
+
+      setIsAdvanced(false);
     } catch (e) {
       console.error("Query parse failed, switching to advanced mode:", e);
       setIsAdvanced(true);
@@ -1142,12 +1031,11 @@ export default function Home() {
   // Step 1 Validation & Go to Step 2
   const handleNextStep = async () => {
     if (!isAdvanced) {
-      const hasRawWords = includeRawWords.length > 0 || includeRawInput.trim().length > 0;
-      const hasWords = includeWords.length > 0 || includeInput.trim().length > 0;
-      const hasTags = tags.length > 0 || tagsInput.trim().length > 0;
-      
-      if (!hasRawWords && !hasWords && !hasTags) {
-        toast.error("「含める単語（部分一致）」、「含める単語（単語一致）」、「タグ」のいずれか1つ以上を入力してください。");
+      const hasIncludeGroups = includeGroups.some((group) => {
+        return hasIncludeGroupContent(group);
+      });
+      if (!hasIncludeGroups) {
+        toast.error("「含める条件」を1つ以上入力してください。");
         return;
       }
 
@@ -1219,12 +1107,11 @@ export default function Home() {
     }
 
     if (!isAdvanced) {
-      const hasRawWords = includeRawWords.length > 0 || includeRawInput.trim().length > 0;
-      const hasWords = includeWords.length > 0 || includeInput.trim().length > 0;
-      const hasTags = tags.length > 0 || tagsInput.trim().length > 0;
-      
-      if (!hasRawWords && !hasWords && !hasTags) {
-        toast.error("「含める単語（部分一致）」、「含める単語（単語一致）」、「タグ」のいずれか1つ以上を入力してください。");
+      const hasIncludeGroups = includeGroups.some((group) => {
+        return hasIncludeGroupContent(group);
+      });
+      if (!hasIncludeGroups) {
+        toast.error("「含める条件」を1つ以上入力してください。");
         setStep(1);
         return;
       }
@@ -2237,113 +2124,105 @@ export default function Home() {
                             </button>
                           </div>
 
-                          {/* Include Raw Words (部分一致 / text.raw) */}
-                          <div className="space-y-2 border-t border-slate-900/60 pt-4">
-                            <Label htmlFor="include-raw" className="text-xs font-semibold text-slate-300 flex items-center justify-between">
-                              <span className="flex items-center gap-1.5">
-                                <CheckCircle className="w-3.5 h-3.5 text-emerald-400" />
-                                含める単語（部分一致 / 生テキスト）
-                                <Badge variant="outline" className="text-[9px] py-0 border-amber-900/60 text-amber-500 font-mono ml-1">いずれか必須</Badge>
-                              </span>
-                              <div className="flex gap-1">
-                                <button
-                                  type="button"
-                                  onClick={() => setIncludeRawMode("OR")}
-                                  className={`text-[10px] font-mono px-2 py-0.5 rounded ${includeRawMode === "OR" ? "bg-blue-950/60 border border-blue-800/40 text-blue-400" : "text-slate-500 hover:text-slate-300"}`}
-                                >
-                                  いずれか含む (OR)
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => setIncludeRawMode("AND")}
-                                  className={`text-[10px] font-mono px-2 py-0.5 rounded ${includeRawMode === "AND" ? "bg-blue-950/60 border border-blue-800/40 text-blue-400" : "text-slate-500 hover:text-slate-300"}`}
-                                >
-                                  すべて含む (AND)
-                                </button>
-                              </div>
-                            </Label>
-                            <TagsInput
-                              value={includeRawWords}
-                              onChange={setIncludeRawWords}
-                              inputValue={includeRawInput}
-                              onInputValueChange={setIncludeRawInput}
-                              placeholder="例: 猫, ねこ (部分一致で検索します。Enter/Space等で確定)"
-                              disabled={isDeploying}
-                            />
-                          </div>
-
-                          {/* Include Words (単語一致 / 形態素) */}
-                          <div className="space-y-2 border-t border-slate-900/60 pt-4">
-                            <Label htmlFor="include" className="text-xs font-semibold text-slate-300 flex items-center justify-between">
-                              <span className="flex items-center gap-1.5">
+                          {/* Include Groups (raw / tag / word in one card, cards connected by AND) */}
+                          <div className="space-y-3 border-t border-slate-900/60 pt-4">
+                            <div className="flex items-start justify-between gap-3">
+                              <Label htmlFor="include-groups" className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
                                 <CheckCircle className="w-3.5 h-3.5 text-blue-400" />
-                                含める単語（単語一致 / 形態素）
-                                <Badge variant="outline" className="text-[9px] py-0 border-amber-900/60 text-amber-500 font-mono ml-1">いずれか必須</Badge>
-                              </span>
-                              <div className="flex gap-1">
-                                <button
-                                  type="button"
-                                  onClick={() => setIncludeMode("OR")}
-                                  className={`text-[10px] font-mono px-2 py-0.5 rounded ${includeMode === "OR" ? "bg-blue-950/60 border border-blue-800/40 text-blue-400" : "text-slate-500 hover:text-slate-300"}`}
-                                >
-                                  いずれか含む (OR)
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => setIncludeMode("AND")}
-                                  className={`text-[10px] font-mono px-2 py-0.5 rounded ${includeMode === "AND" ? "bg-blue-950/60 border border-blue-800/40 text-blue-400" : "text-slate-500 hover:text-slate-300"}`}
-                                >
-                                  すべて含む (AND)
-                                </button>
-                              </div>
-                            </Label>
-                            <TagsInput
-                              value={includeWords}
-                              onChange={setIncludeWords}
-                              inputValue={includeInput}
-                              onInputValueChange={setIncludeInput}
-                              placeholder="例: 猫, ねこ (形態素の完全一致で検索します。Enter/Space等で確定)"
-                              disabled={isDeploying}
-                            />
-                          </div>
+                                含める条件
+                                <Badge variant="outline" className="text-[9px] py-0 border-amber-900/60 text-amber-500 font-mono ml-1">
+                                  カード内はOR
+                                </Badge>
+                              </Label>
+                              <Button
+                                type="button"
+                                variant="outline"
+                                onClick={addIncludeGroup}
+                                disabled={isDeploying}
+                                className="h-8 shrink-0 border-slate-800 bg-slate-900/40 text-slate-300 hover:bg-slate-800 hover:text-white"
+                              >
+                                <Plus className="w-3.5 h-3.5 mr-1.5" />
+                                AND条件を追加
+                              </Button>
+                            </div>
 
+                            <div className="space-y-3">
+                              {includeGroups.map((group, index) => (
+                                <div key={group.id} className="space-y-3 rounded-2xl border border-slate-800/80 bg-slate-900/40 p-3 shadow-[0_0_0_1px_rgba(15,23,42,0.2)]">
+                                  {index > 0 && (
+                                    <div className="flex items-center justify-center">
+                                      <span className="text-[10px] font-mono uppercase tracking-[0.35em] text-slate-500">AND</span>
+                                    </div>
+                                  )}
+                                  <div className="flex items-center justify-between gap-2">
+                                    <span className="text-[10px] font-mono text-slate-500 uppercase tracking-[0.22em]">
+                                      条件 {index + 1}
+                                    </span>
+                                    <button
+                                      type="button"
+                                      onClick={() => removeIncludeGroup(group.id)}
+                                      disabled={isDeploying || includeGroups.length === 1}
+                                      className={`text-[10px] font-mono px-2 py-0.5 rounded transition ${
+                                        isDeploying || includeGroups.length === 1
+                                          ? "text-slate-600 cursor-not-allowed"
+                                          : "text-rose-400 hover:text-rose-300 hover:bg-rose-950/30"
+                                      }`}
+                                    >
+                                      削除
+                                    </button>
+                                  </div>
 
+                                  <div className="space-y-2">
+                                    <Label className="text-[11px] font-medium text-slate-400">形態素</Label>
+                                    <TagsInput
+                                      value={group.wordWords}
+                                      onChange={(words) => updateIncludeGroup(group.id, { wordWords: words })}
+                                      inputValue={group.wordInput}
+                                      onInputValueChange={(value) => updateIncludeGroup(group.id, { wordInput: value })}
+                                      placeholder="例: 猫, ねこ"
+                                      disabled={isDeploying}
+                                    />
+                                    <p className="text-[10px] text-slate-500 leading-relaxed">
+                                      単語一致で検索します。カタカナのみ、漢字のみの単語におすすめです。
+                                    </p>
+                                  </div>
 
-                          {/* Tags (Convert to text.raw contains "#tag") */}
-                          <div className="space-y-2 border-t border-slate-900/60 pt-4">
-                            <Label htmlFor="tags" className="text-xs font-semibold text-slate-300 flex items-center justify-between gap-1.5 flex-wrap">
-                              <span className="flex items-center gap-1.5">
-                                <Tags className="w-3.5 h-3.5 text-blue-400" />
-                                タグ
-                                <Badge variant="outline" className="text-[9px] py-0 border-amber-900/60 text-amber-500 font-mono ml-1">いずれか必須</Badge>
-                              </span>
-                              {(tags.length > 0 || tagsInput.trim().length > 0) && (
-                                <div className="flex gap-1">
-                                  <button
-                                    type="button"
-                                    onClick={() => setTagsMode("OR")}
-                                    className={`text-[10px] font-mono px-2 py-0.5 rounded transition ${tagsMode === "OR" ? "bg-blue-950/60 border border-blue-800/40 text-blue-400" : "text-slate-500 hover:text-slate-300"}`}
-                                  >
-                                    キーワードとOR結合 (原則)
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => setTagsMode("AND")}
-                                    className={`text-[10px] font-mono px-2 py-0.5 rounded transition ${tagsMode === "AND" ? "bg-blue-950/60 border border-blue-800/40 text-blue-400" : "text-slate-500 hover:text-slate-300"}`}
-                                  >
-                                    キーワードとAND結合
-                                  </button>
+                                  <div className="space-y-2">
+                                    <Label className="text-[11px] font-medium text-slate-400">テキスト</Label>
+                                    <TagsInput
+                                      value={group.rawWords}
+                                      onChange={(words) => updateIncludeGroup(group.id, { rawWords: words })}
+                                      inputValue={group.rawInput}
+                                      onInputValueChange={(value) => updateIncludeGroup(group.id, { rawInput: value })}
+                                      placeholder="例: けいおん, ひらがな"
+                                      disabled={isDeploying}
+                                    />
+                                    <p className="text-[10px] text-slate-500 leading-relaxed">
+                                      部分一致で検索します。ひらがなを含む場合におすすめです。
+                                    </p>
+                                  </div>
+
+                                  <div className="space-y-2">
+                                    <Label className="text-[11px] font-medium text-slate-400">ハッシュタグ</Label>
+                                    <TagsInput
+                                      value={group.tags}
+                                      onChange={(tags) => updateIncludeGroup(group.id, { tags })}
+                                      inputValue={group.tagsInput}
+                                      onInputValueChange={(value) => updateIncludeGroup(group.id, { tagsInput: value })}
+                                      placeholder="例: イラスト, 写真"
+                                      disabled={isDeploying}
+                                    />
+                                    <p className="text-[10px] text-slate-500 leading-relaxed">
+                                      ハッシュタグで絞り込みます。複数入力した場合は、そのうちどれかを含む投稿が対象です。
+                                    </p>
+                                  </div>
+
+                                  <p className="text-[10px] text-slate-500 leading-relaxed">
+                                    このカード内の条件は OR で結合されます。カードを追加すると AND でつながります。
+                                  </p>
                                 </div>
-                              )}
-                            </Label>
-                            <TagsInput
-                              value={tags}
-                              onChange={setTags}
-                              inputValue={tagsInput}
-                              onInputValueChange={setTagsInput}
-                              placeholder="例: イラスト, 写真 (Enter, Space, またはカンマ区切り)"
-                              disabled={isDeploying}
-                            />
+                              ))}
+                            </div>
                           </div>
 
 
