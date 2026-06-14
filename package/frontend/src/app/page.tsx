@@ -132,6 +132,7 @@ export default function Home() {
   const [loginHandle, setLoginHandle] = useState("");
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [isLoggingInWithAtPassport, setIsLoggingInWithAtPassport] = useState(false);
+  const [isLoginInProgress, setIsLoginInProgress] = useState(false);
 
   // Feed Management States
   const [feeds, setFeeds] = useState<Feed[]>([]);
@@ -181,7 +182,7 @@ export default function Home() {
   const [actorSuggestions, setActorSuggestions] = useState<any[]>([]);
   const [isLoadingActorSuggestions, setIsLoadingActorSuggestions] = useState(false);
   const [step, setStep] = useState<1 | 2>(1);
-  
+
   // Advanced Query Toggle
   const [isAdvanced, setIsAdvanced] = useState(false);
   const [rawCondition, setRawCondition] = useState("");
@@ -309,6 +310,10 @@ export default function Home() {
       if (savedApi) {
         setApiBaseUrl(savedApi);
         setTempApiBaseUrl(savedApi);
+      }
+      const inProgress = localStorage.getItem("rito_login_in_progress");
+      if (inProgress === "true") {
+        setIsLoginInProgress(true);
       }
       setIsConfigLoaded(true);
     }
@@ -561,6 +566,10 @@ export default function Home() {
         if (data.handle && data.did) {
           setUser({ handle: data.handle, did: data.did });
           setIsAuthenticated(true);
+          if (typeof window !== "undefined") {
+            localStorage.removeItem("rito_login_in_progress");
+          }
+          setIsLoginInProgress(false);
         } else {
           setIsAuthenticated(false);
           setUser(null);
@@ -1085,6 +1094,9 @@ export default function Home() {
     }
 
     setIsLoggingIn(true);
+    if (typeof window !== "undefined") {
+      localStorage.setItem("rito_login_in_progress", "true");
+    }
     const origin = typeof window !== "undefined" ? window.location.origin : "";
     const loginUrl = `${apiBaseUrl}/oauth/login?handle=${encodeURIComponent(loginHandle.trim())}&redirect=${encodeURIComponent(origin + "/")}`;
     
@@ -1095,6 +1107,9 @@ export default function Home() {
   // Login with @passport handler (Redirects to atpassport.net)
   const handleAtPassportLogin = () => {
     setIsLoggingInWithAtPassport(true);
+    if (typeof window !== "undefined") {
+      localStorage.setItem("rito_login_in_progress", "true");
+    }
     const origin = typeof window !== "undefined" ? window.location.origin : "";
     const callbackUrl = `${origin}/api/auth/atpassport/callback`;
     const targetUrl = `https://atpassport.net/authentication?callback=${encodeURIComponent(callbackUrl)}`;
@@ -1546,7 +1561,101 @@ export default function Home() {
 
       {/* MAIN CONTENT AREA */}
       <main className="flex-1 max-w-6xl w-full mx-auto px-4 py-8 flex flex-col justify-start">
-        {isLoadingSession ? (
+        {isLoginInProgress && isLoadingSession ? (
+          /* ログイン処理中の詳細ローディング画面 */
+          <div className="max-w-md w-full mx-auto my-auto py-10 animate-in fade-in duration-300">
+            <Card className="bg-slate-950/40 backdrop-blur-xl border-slate-800/80 shadow-[0_0_50px_rgba(34,139,230,0.03)] rounded-2xl relative overflow-hidden">
+              <div className="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-transparent via-blue-500 to-transparent" />
+              <CardHeader className="text-center pt-8">
+                <CardTitle className="text-2xl font-bold tracking-tight text-white">ログイン処理中</CardTitle>
+                <CardDescription className="text-slate-400 text-xs">
+                  セッションを安全に確立しています。しばらくお待ちください...
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="flex flex-col items-center justify-center py-10 gap-4">
+                <div className="relative flex items-center justify-center">
+                  <RefreshCw className="h-16 w-16 text-blue-500 animate-spin" />
+                  <Compass className="h-8 w-8 text-blue-400/60 absolute animate-pulse" />
+                </div>
+                <p className="text-xs text-slate-400 font-mono animate-pulse">APIサーバーに接続中...</p>
+              </CardContent>
+            </Card>
+          </div>
+        ) : isLoginInProgress && !isAuthenticated ? (
+          /* ブラウザのセキュリティ制限によるCookieブロック発生時のエラー解決画面 */
+          <div className="max-w-md w-full mx-auto my-auto py-10 animate-in fade-in duration-300">
+            <Card className="bg-slate-950/40 backdrop-blur-xl border-slate-800/80 shadow-[0_0_50px_rgba(239,68,68,0.03)] rounded-2xl relative overflow-hidden">
+              <div className="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-transparent via-red-500 to-transparent" />
+              <CardHeader className="pt-8">
+                <div className="flex items-center gap-3">
+                  <div className="bg-red-500/10 p-2 rounded-full w-fit text-red-400 border border-red-500/20">
+                    <AlertCircle className="h-6 w-6" />
+                  </div>
+                  <div>
+                    <CardTitle className="text-xl font-bold text-white tracking-tight">ログインが完了できません</CardTitle>
+                    <CardDescription className="text-slate-400 text-xs">セッションエラーが発生しました</CardDescription>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-4 pt-4">
+                <div className="bg-red-500/5 text-red-400 border border-red-500/10 rounded-xl p-3.5 text-xs leading-relaxed">
+                  ログインセッションの確立に失敗しました。PC・スマートフォンを問わず、ブラウザのセキュリティ設定によってCookieがブロックされた可能性があります。
+                </div>
+
+                {/* ブラウザのCookie制限に関する案内 */}
+                <div className="bg-slate-900/60 border border-slate-800/80 rounded-xl p-4 space-y-3">
+                  <div className="flex items-center gap-2 text-xs font-semibold text-slate-200">
+                    <Info className="h-3.5 w-3.5 text-blue-400" />
+                    ブラウザ設定の確認
+                  </div>
+                  <p className="text-[11px] text-slate-400 leading-relaxed">
+                    このエディターはAPIサーバーのログインCookieを使用します。次の設定や状態を確認してから再試行してください。
+                  </p>
+                  <ol className="list-decimal list-inside text-[11px] text-slate-400 space-y-1.5 pl-1 leading-relaxed">
+                    <li>シークレット・プライベートブラウズを終了する</li>
+                    <li>ブラウザでサードパーティCookieを許可する</li>
+                    <li>Safariでは「サイト越えトラッキングを防ぐ」を確認する</li>
+                    <li>設定変更後に再度ログインする</li>
+                  </ol>
+                </div>
+
+                <div className="space-y-2 pt-2">
+                  <Button 
+                    type="button" 
+                    className="w-full bg-gradient-to-r from-violet-600 via-indigo-600 to-blue-600 hover:from-violet-500 hover:to-blue-500 text-white font-medium shadow-[0_0_20px_rgba(139,92,246,0.3)]" 
+                    onClick={handleAtPassportLogin}
+                  >
+                    @passport で簡単ログインを試す
+                  </Button>
+                  
+                  <div className="grid grid-cols-2 gap-2">
+                    <Button 
+                      variant="outline" 
+                      onClick={checkSession}
+                      className="flex items-center gap-1.5 justify-center border-slate-800 bg-slate-900/40 text-slate-300 hover:bg-slate-800"
+                    >
+                      <RefreshCw className="h-3.5 w-3.5" />
+                      再試行
+                    </Button>
+                    <Button 
+                      variant="ghost" 
+                      onClick={() => {
+                        if (typeof window !== "undefined") {
+                          localStorage.removeItem("rito_login_in_progress");
+                        }
+                        setIsLoginInProgress(false);
+                      }}
+                      className="flex items-center gap-1.5 justify-center text-slate-400 hover:text-slate-200"
+                    >
+                      <ArrowLeft className="h-3.5 w-3.5" />
+                      戻る
+                    </Button>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        ) : isLoadingSession ? (
           /* Loading State */
           <div className="flex flex-col items-center justify-center py-20 gap-3">
             <RefreshCw className="w-8 h-8 text-blue-400 animate-spin" />
