@@ -410,7 +410,7 @@ export default function HelpPage() {
                   <li>
                     <span className="font-semibold text-slate-300">テキスト</span>
                     　—　部分一致で検索します。ひらがなを含む場合におすすめです。
-                    例えば「けいおん」と入力すると「けいおん」を含む投稿が対象になります。
+                  例えば「ブルスコ」と入力すると「ブルスコ」を含む投稿が対象になります。
                   </li>
                   <li>
                     <span className="font-semibold text-slate-300">ハッシュタグ</span>
@@ -578,7 +578,7 @@ export default function HelpPage() {
               <p>
                 <span className="text-blue-400">keyword</span>
                 <span className="text-slate-400">(</span>
-                <span className="text-amber-300">&quot;けいおん&quot;</span>
+                <span className="text-amber-300">&quot;ブルスコ&quot;</span>
                 <span className="text-slate-400">)</span>{" "}
                 <span className="text-violet-400">&amp;&amp;</span>{" "}
                 <span className="text-blue-400">hasimage</span>
