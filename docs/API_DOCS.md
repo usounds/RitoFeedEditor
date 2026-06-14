@@ -2332,7 +2332,7 @@ not
 
             文字列 / リスト対象: text (形態素),
             text.raw (生テキスト), langs,
-            labels, facet.features.tags
+            labels, facets.features.tag
 
 
             日時対象: createdAt, createdAt.year,
@@ -2359,7 +2359,7 @@ not
 - 
             文字列 / リスト対象: text (形態素),
             text.raw (生テキスト), langs,
-            labels, facet.features.tags
+            labels, facets.features.tag
 
 - 
             日時対象: createdAt, createdAt.year,
@@ -2426,7 +2426,7 @@ not
 - 
             文字列 / リスト対象: text (形態素),
             text.raw (生テキスト), langs,
-            labels, facet.features.tags
+            labels, facets.features.tag
 
 - 
             日時対象: createdAt, createdAt.year,
@@ -2470,7 +2470,7 @@ labels
 
 
 ```
-facet.features.tags
+facets.features.tag
 ```
 
 
@@ -2758,4 +2758,3 @@ source { postedBy($me, newest) } filter { embed.images exists } sort { mix(3, ne
 ```
 source { postedBy($me, newest) } filter { embed.images exists } sort { mix(3, newest(100)) }
 ```
-
